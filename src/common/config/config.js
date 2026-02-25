@@ -3,9 +3,9 @@ module.exports = {
     default_module: 'api',
 	port: 8360, //服务端口，可自定义
     weixin: {
-        appid: 'wx7af111110000000', // 小程序 appid
-        secret: 'cb8e5adce569f9bddce5b8123123e1115aaddce505', // 小程序密钥
-        mch_id: '15988888888', // 商户帐号ID
+        appid: 'wxbfdcb48d65950fc5', // 小程序 appid
+        secret: 'e0ddc61f3c9897a5c1580c5b4ea508d3', // 小程序密钥
+        mch_id: '18359670798', // 商户帐号ID
         partner_key: 'asdasdasdasdasdasdasd', // 微信支付密钥
         notify_url: 'https://www.您的域名.com/api/pay/notify' // 微信支付异步通知
     },
@@ -24,21 +24,29 @@ module.exports = {
         print_url: 'http://sandboxapi.kdniao.com:8080/kdniaosandbox/gateway/exterfaceInvoke.json',
         ip_server_url:'http://www.kdniao.com/External/GetIp.aspx'
     },
-    qiniu: {
-        access_key: 'asdlakjsdlajlajsdlas',      // 在七牛密钥管理中获取
-        secret_key: 'alskdjalksjdlasjdlajsd',    // 在七牛密钥管理中获取
-        bucket: 'bucketname',                    // 请填自己的bucket的名称
-        domain: 'domain/'                         // 请填自己的domain域名
+    // 阿里云OSS配置 - 替代七牛云
+    oss: {
+        region: 'oss-cn-shenzhen',              // 华南1(深圳)
+        accessKeyId: process.env.OSS_ACCESS_KEY_ID || '',
+        accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '',
+        bucket: 'fyb-shop-bucket',               // 存储桶名称
+        domain: 'https://fyb-shop-bucket.oss-cn-shenzhen.aliyuncs.com/' // 访问域名
     },
-    // 在七牛新建一个https的空间，这个是用来存储分享图片的https图片，对应的是goods表中的https_pic_url
-    qiniuHttps: {
-        access_key: 'asdlakjsdlajlajsdlasasdla', // 在七牛密钥管理中获取
-        secret_key: 'aaaaaaaaaaasdasdasdasd', // 在七牛密钥管理中获取
-        bucket: 'bucketname', // 自己设置的
-        domain: 'domain/', // 自己设置，例如：'http://img.你的域名.com/',别忘了这个”/“
-        // https://developer.qiniu.com/kodo/manual/1671/region-endpoint
-        zoneNum: 0  // 这个自己根据地区设置：华东 0；华北 1；华南 2； 北美 3；东南亚 4
-    },
+    // qiniu: {
+    //     access_key: 'asdlakjsdlajlajsdlas',      // 在七牛密钥管理中获取
+    //     secret_key: 'alskdjalksjdlasjdlajsd',    // 在七牛密钥管理中获取
+    //     bucket: 'bucketname',                    // 请填自己的bucket的名称
+    //     domain: 'domain/'                         // 请填自己的domain域名
+    // },
+    // // 在七牛新建一个https的空间，这个是用来存储分享图片的https图片，对应的是goods表中的https_pic_url
+    // qiniuHttps: {
+    //     access_key: 'asdlakjsdlajlajsdlasasdla', // 在七牛密钥管理中获取
+    //     secret_key: 'aaaaaaaaaaasdasdasdasd', // 在七牛密钥管理中获取
+    //     bucket: 'bucketname', // 自己设置的
+    //     domain: 'domain/', // 自己设置，例如：'http://img.你的域名.com/',别忘了这个”/”
+    //     // https://developer.qiniu.com/kodo/manual/1671/region-endpoint
+    //     zoneNum: 0  // 这个自己根据地区设置：华东 0；华北 1；华南 2； 北美 3；东南亚 4
+    // },
     aliexpress:{
         // https://market.aliyun.com/products/56928004/cmapi021863.html?spm=5176.730005.productlist.d_cmapi021863.6ba73524uQjLqE&innerSource=search_%E5%85%A8%E5%9B%BD%E5%BF%AB%E9%80%92%E7%89%A9%E6%B5%81%E6%9F%A5%E8%AF%A2-%E5%BF%AB%E9%80%92%E6%9F%A5%E8%AF%A2%E6%8E%A5%E5%8F%A3#sku=yuncode1586300000
         url:'http://wuliu.market.alicloudapi.com/kdi', //阿里云的物流查询api，收费的

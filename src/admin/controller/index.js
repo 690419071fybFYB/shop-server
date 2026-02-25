@@ -22,13 +22,12 @@ module.exports = class extends Base {
         return this.success(info);
     }
     async getQiniuTokenAction(){
-        const TokenSerivce = this.service('qiniu'); // 服务里返回token
-        let data = await TokenSerivce.getQiniuToken(); // 取得token值 goods
-        let qiniuToken = data.uploadToken;
-        let domain = data.domain;
-        let info ={
-            token:qiniuToken,
-            url:domain
+        const ossService = this.service('oss'); // 使用OSS服务
+        let data = await ossService.getUploadSignature();
+        let info = {
+            uploadUrl: data.uploadUrl,  // 签名URL
+            key: data.key,              // 文件key
+            domain: data.domain         // 访问域名
         };
         return this.success(info);
     }

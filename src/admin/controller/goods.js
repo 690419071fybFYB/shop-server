@@ -2,7 +2,7 @@ const Base = require('./base.js');
 const moment = require('moment');
 const fs = require('fs');
 const path = require("path");
-const qiniu = require('qiniu');
+// const qiniu = require('qiniu'); // 已替换为阿里云OSS
 module.exports = class extends Base {
     /**
      * index action
@@ -890,54 +890,13 @@ module.exports = class extends Base {
     }
     async uploadHttpsImageAction() {
         let url = this.post('url');
-        let accessKey = think.config('qiniuHttps.access_key');
-        let secretKey = think.config('qiniuHttps.secret_key');
-        let domain = think.config('qiniuHttps.domain');
-        var mac = new qiniu.auth.digest.Mac(accessKey, secretKey);
-        var config = new qiniu.conf.Config();
-        let zoneNum = think.config('qiniuHttps.zoneNum');
-        if(zoneNum == 0){
-            config.zone = qiniu.zone.Zone_z0;
+        try {
+            const ossService = this.service('oss');
+            const ossUrl = await ossService.fetchAndUpload(url);
+            return this.success(ossUrl);
+        } catch (error) {
+            console.error('上传HTTPS图片失败:', error);
+            return this.fail('上传失败');
         }
-        else if(zoneNum == 1){
-            config.zone = qiniu.zone.Zone_z1;
-        }
-        else if(zoneNum == 2){
-            config.zone = qiniu.zone.Zone_z2;
-        }
-        else if(zoneNum == 3){
-            config.zone = qiniu.zone.Zone_na0;
-        }
-        else if(zoneNum == 4){
-            config.zone = qiniu.zone.Zone_as0;
-        }
-        var bucketManager = new qiniu.rs.BucketManager(mac, config);
-        let bucket = think.config('qiniuHttps.bucket');
-        let key = think.uuid(32);
-        await think.timeout(500);
-        const uploadQiniu = async() => {
-            return new Promise((resolve, reject) => {
-                try {
-                    bucketManager.fetch(url, bucket, key, function(err, respBody, respInfo) {
-                        if (err) {
-                            console.log(err);
-                            //throw err;
-                        } else {
-                            if (respInfo.statusCode == 200) {
-                                resolve(respBody.key)
-                            } else {
-                                console.log(respInfo.statusCode);
-                            }
-                        }
-                    });
-                } catch (e) {
-                    return resolve(null);
-                }
-            })
-        };
-        const httpsUrl = await uploadQiniu();
-        console.log(httpsUrl);
-        let lastUrl = domain + httpsUrl;
-        return this.success(lastUrl);
     }
 };

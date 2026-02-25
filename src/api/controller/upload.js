@@ -1,26 +1,36 @@
 const Base = require("./base.js");
 const fs = require("fs");
-const path = require("path");
 
 module.exports = class extends Base {
   async uploadAvatarAction() {
     const file = this.file('upload_file');
-    let fileType = file.type;
-    const spliceLength = fileType.lastIndexOf("/");
-    let fileTypeText = fileType.slice(spliceLength + 1);
     if (think.isEmpty(file)) {
       return this.fail("保存失败");
     }
-    const that = this;
-    let name = think.uuid(32) + "." + fileTypeText;
-    const filename = "/static/upload/avatar/" + name;
-    const is = fs.createReadStream(file.path);
-    const os = fs.createWriteStream(think.ROOT_PATH + "/www" + filename);
-    is.pipe(os);
-    return that.success({
-      name: name,
-      fileUrl: filename,
-    });
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+      return this.fail("仅支持图片上传");
+    }
+    try {
+      const ossService = this.service('oss');
+      const uploaded = await ossService.uploadLocalFile(file.path, file.type, 'avatar');
+      const userId = this.getLoginUserId();
+      if (userId > 0) {
+        await this.model('user').where({ id: userId }).update({
+          avatar: uploaded.url
+        });
+      }
+      return this.success({
+        name: uploaded.key,
+        fileUrl: uploaded.url,
+      });
+    } catch (error) {
+      console.error('头像上传失败:', error);
+      return this.fail("头像上传失败");
+    } finally {
+      if (file.path) {
+        fs.unlink(file.path, () => {});
+      }
+    }
   }
 
   // async deleteFileAction() {

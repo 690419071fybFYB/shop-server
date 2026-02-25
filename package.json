@@ -9,6 +9,7 @@
     "lint-fix": "eslint --fix src/"
   },
   "dependencies": {
+    "ali-oss": "^6.23.0",
     "gm": "^1.23.0",
     "jsonwebtoken": "^8.0.0",
     "jushuitan": "^1.0.2",
@@ -17,6 +18,7 @@
     "md5": "^2.2.1",
     "mime-types": "^2.1.24",
     "moment": "^2.18.1",
+    "mysql2": "^3.9.7",
     "nanoid": "^2.1.1",
     "node-wget": "^0.4.3",
     "pinyin": "^2.9.0",
@@ -38,17 +40,21 @@
   "devDependencies": {
     "babel-cli": "^6.24.1",
     "babel-preset-think-node": "^1.0.0",
-    "node-notifier": "^5.0.2",
-    "think-watcher": "^3.0.0",
-    "think-inspect": "0.0.2",
-    "think-babel": "^1.0.3",
     "eslint": "^4.2.0",
-    "eslint-config-think": "^1.0.0"
+    "eslint-config-think": "^1.0.0",
+    "node-notifier": "^5.0.2",
+    "think-babel": "^1.0.3",
+    "think-inspect": "0.0.2",
+    "think-watcher": "^3.0.0"
   },
   "repository": "",
   "license": "MIT",
   "engines": {
     "node": ">=6.0.0"
+  },
+  "overrides": {
+    "log4js": "^6.9.1",
+    "mysql": "^2.18.1"
   },
   "readmeFilename": "README.md"
 }
