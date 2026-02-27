@@ -3,11 +3,11 @@ module.exports = {
     default_module: 'api',
 	port: 8360, //服务端口，可自定义
     weixin: {
-        appid: 'wxbfdcb48d65950fc5', // 小程序 appid
-        secret: 'e0ddc61f3c9897a5c1580c5b4ea508d3', // 小程序密钥
-        mch_id: '18359670798', // 商户帐号ID
-        partner_key: 'asdasdasdasdasdasdasd', // 微信支付密钥
-        notify_url: 'https://www.您的域名.com/api/pay/notify' // 微信支付异步通知
+        appid: process.env.WEIXIN_APPID || '', // 小程序 appid
+        secret: process.env.WEIXIN_SECRET || '', // 小程序密钥
+        mch_id: process.env.WEIXIN_MCH_ID || '', // 商户帐号ID
+        partner_key: process.env.WEIXIN_PARTNER_KEY || '', // 微信支付密钥
+        notify_url: process.env.WEIXIN_NOTIFY_URL || 'https://api.fybshop.site/api/pay/notify' // 微信支付异步通知
     },
     express: {
         // 已废弃，之后考虑改回来，做成和阿里云的物流查询可以切换，方便大家的使用
