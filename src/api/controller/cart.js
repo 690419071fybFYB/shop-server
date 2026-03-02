@@ -25,6 +25,7 @@ module.exports = class extends Base {
         let checkedGoodsCount = 0;
         let checkedGoodsAmount = 0;
         let numberChange = 0;
+        let normalizedCartList = [];
         for (const cartItem of cartList) {
             let product = await this.model('product').where({
                 id: cartItem.product_id,
@@ -55,9 +56,15 @@ module.exports = class extends Base {
                 } else if (productNum > 0 && productNum < cartItem.number) {
                     cartItem.number = productNum;
                     numberChange = 1;
-                } else if (productNum > 0 && cartItem.number == 0) {
-                    cartItem.number = 1;
-                    numberChange = 1;
+                } else if (productNum > 0 && cartItem.number <= 0) {
+                    await this.model('cart').where({
+                        product_id: cartItem.product_id,
+                        user_id: userId,
+                        is_delete: 0,
+                    }).update({
+                        is_delete: 1
+                    });
+                    continue;
                 }
                 goodsCount += cartItem.number;
                 goodsAmount += cartItem.number * retail_price;
@@ -79,13 +86,14 @@ module.exports = class extends Base {
                 }).update({
                     number: cartItem.number,
                     add_price:retail_price
-                })
+                });
+                normalizedCartList.push(cartItem);
             }
         }
         let cAmount = checkedGoodsAmount.toFixed(2);
         let aAmount = checkedGoodsAmount;
         return {
-            cartList: cartList,
+            cartList: normalizedCartList,
             cartTotal: {
                 goodsCount: goodsCount,
                 goodsAmount: goodsAmount.toFixed(2),
@@ -312,7 +320,29 @@ module.exports = class extends Base {
     async updateAction() {
         const productId = this.post('productId'); // 新的product_id
         const id = this.post('id'); // cart.id
+        const userId = this.getLoginUserId();
         const number = parseInt(this.post('number')); // 不是
+        const cartInfo = await this.model('cart').where({
+            id: id,
+            user_id: userId,
+            is_delete: 0
+        }).find();
+        if (think.isEmpty(cartInfo)) {
+            return this.fail(404, '购物车商品不存在');
+        }
+        if (think.isEmpty(number) || Number.isNaN(number)) {
+            return this.fail(400, '数量参数错误');
+        }
+        if (number <= 0) {
+            await this.model('cart').where({
+                id: id,
+                user_id: userId,
+                is_delete: 0
+            }).update({
+                is_delete: 1
+            });
+            return this.success(await this.getCart(0));
+        }
         // 取得规格的信息,判断规格库存
         const productInfo = await this.model('product').where({
             id: productId,
@@ -321,15 +351,11 @@ module.exports = class extends Base {
         if (think.isEmpty(productInfo) || productInfo.goods_number < number) {
             return this.fail(400, '库存不足');
         }
-        // 判断是否已经存在product_id购物车商品
-        const cartInfo = await this.model('cart').where({
-            id: id,
-            is_delete: 0
-        }).find();
         // 只是更新number
         if (cartInfo.product_id === productId) {
             await this.model('cart').where({
                 id: id,
+                user_id: userId,
                 is_delete: 0
             }).update({
                 number: number
