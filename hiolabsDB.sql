@@ -111,6 +111,155 @@ INSERT INTO `hiolabs_admin` VALUES (14,'qilelab.com','8bb5ed5c86cfe460277d11223c
 UNLOCK TABLES;
 
 --
+-- Table structure for table `hiolabs_admin_role`
+--
+
+DROP TABLE IF EXISTS `hiolabs_admin_role`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_admin_role` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `role_key` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `role_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `is_system` tinyint(1) NOT NULL DEFAULT '0',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` int NOT NULL DEFAULT '0',
+  `updated_at` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `role_key_unique` (`role_key`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_admin_role`
+--
+
+LOCK TABLES `hiolabs_admin_role` WRITE;
+/*!40000 ALTER TABLE `hiolabs_admin_role` DISABLE KEYS */;
+INSERT INTO `hiolabs_admin_role` VALUES
+(1,'super_admin','超级管理员',1,0,1772300000,1772300000),
+(2,'ops_admin','运营管理员',0,0,1772300000,1772300000),
+(3,'order_support','订单客服',0,0,1772300000,1772300000),
+(4,'audit_viewer','只读审计',0,0,1772300000,1772300000);
+/*!40000 ALTER TABLE `hiolabs_admin_role` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_admin_permission`
+--
+
+DROP TABLE IF EXISTS `hiolabs_admin_permission`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_admin_permission` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `perm_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `perm_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `perm_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'menu',
+  `parent_id` int NOT NULL DEFAULT '0',
+  `path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `method` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `is_system` tinyint(1) NOT NULL DEFAULT '0',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `perm_key_unique` (`perm_key`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=40 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_admin_permission`
+--
+
+LOCK TABLES `hiolabs_admin_permission` WRITE;
+/*!40000 ALTER TABLE `hiolabs_admin_permission` DISABLE KEYS */;
+INSERT INTO `hiolabs_admin_permission` VALUES
+(1,'menu.dashboard.welcome','后台主页','menu',0,'/dashboard/welcome','',1,0),
+(2,'menu.order','订单列表','menu',0,'/dashboard/order','',1,0),
+(3,'menu.goods','商品管理','menu',0,'/dashboard/goods','',1,0),
+(4,'menu.shopcart','购物车','menu',0,'/dashboard/shopcart','',1,0),
+(5,'menu.user','用户列表','menu',0,'/dashboard/user','',1,0),
+(6,'menu.settings','店铺设置','menu',0,'/dashboard/settings','',1,0),
+(7,'menu.settings.showset','显示设置','menu',6,'/dashboard/settings/showset','',1,0),
+(8,'menu.settings.ad','广告列表','menu',6,'/dashboard/ad','',1,0),
+(9,'menu.settings.notice','公告管理','menu',6,'/dashboard/notice','',1,0),
+(10,'menu.settings.freight','运费模板','menu',6,'/dashboard/freight','',1,0),
+(11,'menu.settings.shipper','快递设置','menu',6,'/dashboard/shipper','',1,0),
+(12,'menu.settings.admin','管理员','menu',6,'/dashboard/admin','',1,0),
+(13,'menu.settings.role','角色权限','menu',6,'/dashboard/role','',1,0),
+(21,'admin:admin.index','管理员列表接口','api',0,'/admin/admin','GET',1,0),
+(22,'admin:admin.admindetail','管理员详情接口','api',0,'/admin/admin/adminDetail','POST',1,0),
+(23,'admin:admin.adminadd','管理员新增接口','api',0,'/admin/admin/adminAdd','POST',1,0),
+(24,'admin:admin.adminsave','管理员编辑接口','api',0,'/admin/admin/adminSave','POST',1,0),
+(25,'admin:admin.deleadmin','管理员删除接口','api',0,'/admin/admin/deleAdmin','POST',1,0),
+(26,'admin:role.list','角色列表接口','api',0,'/admin/role/list','GET',1,0),
+(27,'admin:role.create','角色新增接口','api',0,'/admin/role/create','POST',1,0),
+(28,'admin:role.update','角色编辑接口','api',0,'/admin/role/update','POST',1,0),
+(29,'admin:role.delete','角色删除接口','api',0,'/admin/role/delete','POST',1,0),
+(30,'admin:role.grant','角色授权接口','api',0,'/admin/role/grant','POST',1,0),
+(31,'admin:permission.tree','权限树接口','api',0,'/admin/permission/tree','GET',1,0);
+/*!40000 ALTER TABLE `hiolabs_admin_permission` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_admin_role_permission`
+--
+
+DROP TABLE IF EXISTS `hiolabs_admin_role_permission`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_admin_role_permission` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `role_id` int NOT NULL DEFAULT '0',
+  `permission_id` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `role_perm_unique` (`role_id`,`permission_id`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=120 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_admin_role_permission`
+--
+
+LOCK TABLES `hiolabs_admin_role_permission` WRITE;
+/*!40000 ALTER TABLE `hiolabs_admin_role_permission` DISABLE KEYS */;
+INSERT INTO `hiolabs_admin_role_permission` VALUES
+(1,2,1),(2,2,2),(3,2,3),(4,2,4),(5,2,5),(6,2,6),(7,2,7),(8,2,8),(9,2,9),(10,2,10),(11,2,11),
+(12,3,1),(13,3,2),
+(14,4,1),(15,4,2),(16,4,5),
+(21,2,21),(22,2,22),(23,2,23),(24,2,24),(25,2,25),
+(26,2,26),(27,2,27),(28,2,28),(29,2,29),(30,2,30),(31,2,31);
+/*!40000 ALTER TABLE `hiolabs_admin_role_permission` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_admin_user_role`
+--
+
+DROP TABLE IF EXISTS `hiolabs_admin_user_role`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_admin_user_role` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `admin_id` int NOT NULL DEFAULT '0',
+  `role_id` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `admin_role_unique` (`admin_id`,`role_id`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_admin_user_role`
+--
+
+LOCK TABLES `hiolabs_admin_user_role` WRITE;
+/*!40000 ALTER TABLE `hiolabs_admin_user_role` DISABLE KEYS */;
+INSERT INTO `hiolabs_admin_user_role` VALUES
+(1,14,1),
+(2,26,2);
+/*!40000 ALTER TABLE `hiolabs_admin_user_role` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `hiolabs_cart`
 --
 

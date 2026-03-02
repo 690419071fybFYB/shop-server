@@ -81,4 +81,33 @@ module.exports = class extends Base {
   async logoutAction() {
     return this.success();
   }
+  async phoneNumberAction() {
+    const code = this.post("code");
+    const userId = this.getLoginUserId();
+    if (!userId) {
+      return this.fail(100, "未登录");
+    }
+    if (!code) {
+      return this.fail(400, "code不能为空");
+    }
+    const weixinService = this.service("weixin", "api");
+    const result = await weixinService.getPhoneNumberByCode(code);
+    if (!result || Number(result.errcode || 0) !== 0) {
+      return this.fail(
+        500,
+        result && result.errmsg ? result.errmsg : "获取手机号失败"
+      );
+    }
+    const phoneInfo = result.phone_info || {};
+    const mobile = phoneInfo.purePhoneNumber || phoneInfo.phoneNumber || "";
+    if (!mobile) {
+      return this.fail(500, "手机号为空");
+    }
+    await this.model("user")
+      .where({ id: userId })
+      .update({ mobile: mobile });
+    return this.success({
+      mobile: mobile,
+    });
+  }
 };

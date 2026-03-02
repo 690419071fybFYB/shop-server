@@ -6,6 +6,11 @@ module.exports = class extends Base {
 		if(think.userId == 0){
 			return this.fail(404,'请登录');
 		}
+        return this.success({
+            userId: think.userId,
+            roles: (think.adminAuth && think.adminAuth.role_keys) || [],
+            permissions: (think.adminAuth && think.adminAuth.permissions) || []
+        });
 	}
     async indexAction() {
         const goodsOnsale = await this.model('goods').where({is_on_sale: 1,is_delete:0}).count();

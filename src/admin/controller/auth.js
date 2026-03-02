@@ -9,8 +9,6 @@ module.exports = class extends Base {
         if (think.isEmpty(admin)) {
             return this.fail(401, '用户名或密码不正确!');
         }
-        console.log(think.md5(password + '' + admin.password_salt));
-        console.log(admin.password);
         if (think.md5(password + '' + admin.password_salt) !== admin.password) {
             return this.fail(400, '用户名或密码不正确!!');
         }
@@ -28,14 +26,18 @@ module.exports = class extends Base {
         if (think.isEmpty(sessionKey)) {
             return this.fail('登录失败');
         }
+        const rbacService = this.service('rbac', 'admin');
+        const authContext = await rbacService.getAuthContext(admin.id);
         const userInfo = {
             id: admin.id,
             username: admin.username,
-            name:admin.name
+            name: admin.name || admin.username
         };
         return this.success({
             token: sessionKey,
-            userInfo: userInfo
+            userInfo: userInfo,
+            roles: authContext.role_keys,
+            permissions: authContext.permissions
         });
     }
 };

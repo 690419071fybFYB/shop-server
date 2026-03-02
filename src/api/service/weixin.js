@@ -197,6 +197,27 @@ module.exports = class extends think.Service {
         let token = sessionData.access_token;
         return token;
     }
+    async getPhoneNumberByCode(code) {
+        const accessToken = await this.getAccessToken();
+        if (!accessToken) {
+            return {
+                errcode: -1,
+                errmsg: '获取access_token失败'
+            };
+        }
+        const options = {
+            method: 'POST',
+            url: 'https://api.weixin.qq.com/wxa/business/getuserphonenumber',
+            qs: {
+                access_token: accessToken
+            },
+            body: {
+                code: code
+            },
+            json: true
+        };
+        return await rp(options);
+    }
     async getSelfToken(params) {
         var key = ['meiweiyuxianmeiweiyuxian', params.timestamp, params.nonce].sort().join('');
         //将token （自己设置的） 、timestamp（时间戳）、nonce（随机数）三个参数进行字典排序
