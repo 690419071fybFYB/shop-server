@@ -1,4 +1,10 @@
 // default config
+const cosRegion = process.env.COS_REGION || 'ap-shanghai';
+const cosBucket = process.env.COS_BUCKET || 'fybshopbk-1369967353';
+const cosDomain =
+  process.env.COS_DOMAIN ||
+  `https://${cosBucket}.cos.${cosRegion}.myqcloud.com`;
+
 module.exports = {
     default_module: 'api',
 	port: 8360, //服务端口，可自定义
@@ -24,13 +30,13 @@ module.exports = {
         print_url: 'http://sandboxapi.kdniao.com:8080/kdniaosandbox/gateway/exterfaceInvoke.json',
         ip_server_url:'http://www.kdniao.com/External/GetIp.aspx'
     },
-    // 阿里云OSS配置 - 替代七牛云
+    // 腾讯云COS配置
     oss: {
-        region: 'oss-cn-shenzhen',              // 华南1(深圳)
-        accessKeyId: process.env.OSS_ACCESS_KEY_ID || '',
-        accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '',
-        bucket: 'fyb-shop-bucket',               // 存储桶名称
-        domain: 'https://fyb-shop-bucket.oss-cn-shenzhen.aliyuncs.com/' // 访问域名
+        region: cosRegion,
+        accessKeyId: process.env.COS_SECRET_ID || process.env.OSS_ACCESS_KEY_ID || '',
+        accessKeySecret: process.env.COS_SECRET_KEY || process.env.OSS_ACCESS_KEY_SECRET || '',
+        bucket: cosBucket,
+        domain: cosDomain
     },
     // qiniu: {
     //     access_key: 'asdlakjsdlajlajsdlas',      // 在七牛密钥管理中获取

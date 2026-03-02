@@ -3,7 +3,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const mysql = require('mysql2/promise');
-const OSS = require('ali-oss');
+const COS = require('cos-nodejs-sdk-v5');
 const request = require('request');
 
 const dbConfig = require(path.join(__dirname, '../src/common/config/database.js'));
@@ -33,12 +33,22 @@ if (!ossConfig.region || !ossConfig.bucket || !ossConfig.accessKeyId || !ossConf
   process.exit(1);
 }
 
-const client = new OSS({
-  region: ossConfig.region,
-  accessKeyId: ossConfig.accessKeyId,
-  accessKeySecret: ossConfig.accessKeySecret,
-  bucket: ossConfig.bucket
+const client = new COS({
+  SecretId: ossConfig.accessKeyId,
+  SecretKey: ossConfig.accessKeySecret
 });
+
+function cosPutObject(params) {
+  return new Promise((resolve, reject) => {
+    client.putObject(params, (err, data) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(data);
+    });
+  });
+}
 
 const TABLES = [
   { table: 'ad', pk: 'id', fields: ['image_url'] },
@@ -136,10 +146,12 @@ async function uploadToOssByUrl(sourceUrl) {
     .digest('hex')}${ext}`;
 
   if (!DRY_RUN) {
-    await client.put(key, body, {
-      headers: {
-        'Content-Type': contentType || 'application/octet-stream'
-      }
+    await cosPutObject({
+      Bucket: ossConfig.bucket,
+      Region: ossConfig.region,
+      Key: key,
+      Body: body,
+      ContentType: contentType || 'application/octet-stream'
     });
   }
   const migratedUrl = `${ossDomain}/${key}`;

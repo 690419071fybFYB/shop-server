@@ -9,7 +9,7 @@
     "lint-fix": "eslint --fix src/"
   },
   "dependencies": {
-    "ali-oss": "^6.23.0",
+    "cos-nodejs-sdk-v5": "^2.15.4",
     "gm": "^1.23.0",
     "jsonwebtoken": "^8.0.0",
     "jushuitan": "^1.0.2",
