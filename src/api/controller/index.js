@@ -42,6 +42,26 @@ module.exports = class extends Base {
 			categoryItem.goodsList = categoryGoods;
 		}
 		const userId = this.getLoginUserId();
+		if (Number(userId) > 0 && Array.isArray(categoryList) && categoryList.length > 0) {
+			try {
+				const couponService = this.service('coupon', 'api');
+				const flatGoodsList = [];
+				categoryList.forEach((item) => {
+					(item.goodsList || []).forEach((goods) => {
+						if (goods && Number(goods.id || 0) > 0) {
+							flatGoodsList.push(goods);
+						}
+					});
+				});
+				const decoratedGoods = await couponService.decorateGoodsWithCouponPromo(userId, flatGoodsList);
+				const goodsMap = new Map(decoratedGoods.map(item => [Number(item.id), item]));
+				categoryList.forEach((item) => {
+					item.goodsList = (item.goodsList || []).map(goods => goodsMap.get(Number(goods.id)) || goods);
+				});
+			} catch (err) {
+				think.logger && think.logger.error && think.logger.error(`[index.appInfo.decorateGoodsWithCouponPromo] ${err.message || err}`);
+			}
+		}
 		let cartCount = await this.model('cart').where({
 			user_id: userId,
 			is_delete: 0

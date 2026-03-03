@@ -2,6 +2,10 @@ const Base = require('./base.js');
 const moment = require('moment');
 const pinyin = require("pinyin");
 module.exports = class extends Base {
+    parseSelectedCouponIds(value) {
+        const couponService = this.service('coupon', 'api');
+        return couponService.normalizeIdList(value);
+    }
     async getCart(type) {
 		const userId = this.getLoginUserId();
         let cartList = [];
@@ -428,6 +432,7 @@ module.exports = class extends Base {
         const type = this.get('type'); // 是否团购
         const addressId = this.get('addressId'); // 收货地址id
         const addType = this.get('addType');
+        const selectedUserCouponIds = this.parseSelectedCouponIds(this.get('selectedUserCouponIds') || []);
         let goodsCount = 0; // 购物车的数量
         let goodsMoney = 0; // 购物车的总价
         let freightPrice = 0;
@@ -619,7 +624,13 @@ module.exports = class extends Base {
             id: 1
         }).find();
         orderTotalPrice = Number(money) + Number(freightPrice) // 订单的总价
-        const actualPrice = orderTotalPrice; // 减去其它支付的金额后，要实际支付的金额
+        const couponService = this.service('coupon', 'api');
+        const couponPreview = await couponService.previewCartCoupons({
+            userId: userId,
+            cartItems: checkedGoodsList,
+            selectedUserCouponIds: selectedUserCouponIds,
+            freightPrice: Number(freightPrice || 0)
+        });
         let numberChange = cartData.cartTotal.numberChange;
         return this.success({
             checkedAddress: checkedAddress,
@@ -627,7 +638,11 @@ module.exports = class extends Base {
             checkedGoodsList: checkedGoodsList,
             goodsTotalPrice: goodsTotalPrice,
             orderTotalPrice: orderTotalPrice.toFixed(2),
-            actualPrice: actualPrice.toFixed(2),
+            actualPrice: couponPreview.actualPrice,
+            couponPrice: couponPreview.couponPrice,
+            couponCandidates: couponPreview.couponCandidates,
+            selectedCoupons: couponPreview.selectedCoupons,
+            invalidSelectedIds: couponPreview.invalidSelectedIds,
             goodsCount: goodsCount,
             outStock: outStock,
             numberChange: numberChange,

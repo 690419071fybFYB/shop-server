@@ -77,10 +77,10 @@ module.exports = class extends think.Service {
       SELECT ar.id, ar.role_key, ar.role_name, ar.is_system
       FROM ${this.table('admin_user_role')} aur
       INNER JOIN ${this.table('admin_role')} ar ON aur.role_id = ar.id
-      WHERE aur.admin_id = ? AND ar.is_delete = 0
+      WHERE aur.admin_id = ${uid} AND ar.is_delete = 0
       ORDER BY ar.id ASC
     `;
-    const rows = await this.model('admin').query(sql, [uid]);
+    const rows = await this.model('admin').query(sql);
     if (rows && rows.length > 0) {
       return rows;
     }
@@ -107,7 +107,7 @@ module.exports = class extends think.Service {
       FROM ${this.table('admin_role_permission')} arp
       INNER JOIN ${this.table('admin_permission')} ap ON arp.permission_id = ap.id
       WHERE arp.role_id IN (${ids.join(',')}) AND ap.is_delete = 0
-      ORDER BY ap.id ASC
+      ORDER BY ap.perm_key ASC
     `;
     const rows = await this.model('admin').query(sql);
     return rows.map(item => item.perm_key).filter(Boolean);

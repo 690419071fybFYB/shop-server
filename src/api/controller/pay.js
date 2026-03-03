@@ -20,6 +20,8 @@ module.exports = class extends Base {
         }
         const orderModel = this.model('order');
         await orderModel.updatePayData(orderInfo.id, result);
+        const couponService = this.service('coupon', 'api');
+        await couponService.consumeCouponsForOrder(orderInfo.id);
         this.afterPay(orderInfo);
 		return this.success();
     }
@@ -98,6 +100,8 @@ module.exports = class extends Base {
         if (bool == true) {
             if (orderInfo.order_type == 0) { //普通订单和秒杀订单
                 await orderModel.updatePayData(orderInfo.id, result);
+                const couponService = this.service('coupon', 'api');
+                await couponService.consumeCouponsForOrder(orderInfo.id);
                 this.afterPay(orderInfo);
             } 
         } else {

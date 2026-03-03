@@ -5,7 +5,16 @@ module.exports = class extends Base {
         return this.success(region);
     }
     async listAction() {
-        const regionList = await this.model('region').getRegionList(this.get('parentId'));
+        const rawParentId = this.get('parentId') || this.get('parent_id');
+        let parentId = Number(rawParentId);
+        if (Number.isNaN(parentId)) {
+            parentId = 1;
+        }
+        let regionList = await this.model('region').getRegionList(parentId);
+        // 兼容部分数据集（省份直接挂在 parent_id=0）
+        if (Array.isArray(regionList) && regionList.length === 0 && parentId === 1) {
+            regionList = await this.model('region').getRegionList(0);
+        }
         return this.success(regionList);
     }
     async dataAction() {

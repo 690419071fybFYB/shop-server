@@ -70,8 +70,9 @@ module.exports = class extends think.Model {
      * @returns {Promise.<*>}
      */
     async getRegionList(parentId) {
+        const parsedParentId = Number(parentId);
         return this.where({
-            parent_id: parentId
+            parent_id: Number.isNaN(parsedParentId) ? parentId : parsedParentId
         }).select();
     }
     /**

@@ -1,6 +1,8 @@
 -- RBAC upgrade script for hioshop-server
 -- Safe to run on existing databases (idempotent with IF NOT EXISTS / INSERT IGNORE / ON DUPLICATE KEY).
 
+SET NAMES utf8mb4;
+
 START TRANSACTION;
 
 CREATE TABLE IF NOT EXISTS `hiolabs_admin_role` (
@@ -73,17 +75,40 @@ VALUES
 (11,'menu.settings.shipper','快递设置','menu',6,'/dashboard/shipper','',1,0),
 (12,'menu.settings.admin','管理员','menu',6,'/dashboard/admin','',1,0),
 (13,'menu.settings.role','角色权限','menu',6,'/dashboard/role','',1,0),
-(21,'admin:admin.index','管理员列表接口','api',0,'/admin/admin','GET',1,0),
-(22,'admin:admin.admindetail','管理员详情接口','api',0,'/admin/admin/adminDetail','POST',1,0),
-(23,'admin:admin.adminadd','管理员新增接口','api',0,'/admin/admin/adminAdd','POST',1,0),
-(24,'admin:admin.adminsave','管理员编辑接口','api',0,'/admin/admin/adminSave','POST',1,0),
-(25,'admin:admin.deleadmin','管理员删除接口','api',0,'/admin/admin/deleAdmin','POST',1,0),
-(26,'admin:role.list','角色列表接口','api',0,'/admin/role/list','GET',1,0),
-(27,'admin:role.create','角色新增接口','api',0,'/admin/role/create','POST',1,0),
-(28,'admin:role.update','角色编辑接口','api',0,'/admin/role/update','POST',1,0),
-(29,'admin:role.delete','角色删除接口','api',0,'/admin/role/delete','POST',1,0),
-(30,'admin:role.grant','角色授权接口','api',0,'/admin/role/grant','POST',1,0),
-(31,'admin:permission.tree','权限树接口','api',0,'/admin/permission/tree','GET',1,0)
+(14,'menu.goods.import','商品批量导入','menu',3,'/dashboard/goods/import/tasks','',1,0),
+(20,'menu.settings.coupon','优惠券','menu',6,'/dashboard/coupon','',1,0),
+(15,'menu.api','接口权限','menu',0,'','',1,0),
+(16,'menu.api.admin','管理员接口','menu',15,'','',1,0),
+(17,'menu.api.role','角色接口','menu',15,'','',1,0),
+(18,'menu.api.permission','权限接口','menu',15,'','',1,0),
+(19,'menu.api.goods_import','商品导入接口','menu',15,'','',1,0),
+(40,'menu.api.coupon','优惠券接口','menu',15,'','',1,0),
+(21,'admin:admin.index','管理员列表接口','api',16,'/admin/admin','GET',1,0),
+(22,'admin:admin.admindetail','管理员详情接口','api',16,'/admin/admin/adminDetail','POST',1,0),
+(23,'admin:admin.adminadd','管理员新增接口','api',16,'/admin/admin/adminAdd','POST',1,0),
+(24,'admin:admin.adminsave','管理员编辑接口','api',16,'/admin/admin/adminSave','POST',1,0),
+(25,'admin:admin.deleadmin','管理员删除接口','api',16,'/admin/admin/deleAdmin','POST',1,0),
+(26,'admin:role.list','角色列表接口','api',17,'/admin/role/list','GET',1,0),
+(27,'admin:role.create','角色新增接口','api',17,'/admin/role/create','POST',1,0),
+(28,'admin:role.update','角色编辑接口','api',17,'/admin/role/update','POST',1,0),
+(29,'admin:role.delete','角色删除接口','api',17,'/admin/role/delete','POST',1,0),
+(30,'admin:role.grant','角色授权接口','api',17,'/admin/role/grant','POST',1,0),
+(31,'admin:permission.tree','权限树接口','api',18,'/admin/permission/tree','GET',1,0),
+(32,'admin:goods.importtemplate','商品导入模板下载接口','api',19,'/admin/goods/importTemplate','GET',1,0),
+(33,'admin:goods.importtaskcreate','商品导入任务创建接口','api',19,'/admin/goods/importTaskCreate','POST',1,0),
+(34,'admin:goods.importtasklist','商品导入任务列表接口','api',19,'/admin/goods/importTaskList','GET',1,0),
+(35,'admin:goods.importtaskdetail','商品导入任务详情接口','api',19,'/admin/goods/importTaskDetail','GET',1,0),
+(36,'admin:goods.importtaskerrorfile','商品导入错误文件下载接口','api',19,'/admin/goods/importTaskErrorFile','GET',1,0),
+(41,'admin:coupon.list','优惠券列表接口','api',40,'/admin/coupon/list','GET',1,0),
+(42,'admin:coupon.detail','优惠券详情接口','api',40,'/admin/coupon/detail','GET',1,0),
+(43,'admin:coupon.create','优惠券创建接口','api',40,'/admin/coupon/create','POST',1,0),
+(44,'admin:coupon.update','优惠券更新接口','api',40,'/admin/coupon/update','POST',1,0),
+(45,'admin:coupon.toggle','优惠券状态切换接口','api',40,'/admin/coupon/toggle','POST',1,0),
+(46,'admin:coupon.delete','优惠券删除接口','api',40,'/admin/coupon/delete','POST',1,0),
+(47,'admin:coupon.claimrecord','优惠券领取记录接口','api',40,'/admin/coupon/claimRecord','GET',1,0),
+(48,'admin:coupon.userecord','优惠券使用记录接口','api',40,'/admin/coupon/useRecord','GET',1,0),
+(49,'admin:coupon.claimrecordexport','优惠券领取记录导出接口','api',40,'/admin/coupon/claimRecordExport','GET',1,0),
+(50,'admin:coupon.userecordexport','优惠券使用记录导出接口','api',40,'/admin/coupon/useRecordExport','GET',1,0)
 ON DUPLICATE KEY UPDATE
 `perm_name` = VALUES(`perm_name`),
 `perm_type` = VALUES(`perm_type`),

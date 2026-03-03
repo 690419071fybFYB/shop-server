@@ -34,6 +34,7 @@ module.exports = class extends Base {
         }).select();
         if (orderList.length != 0) {
             // await this.model('order').where({id: ['IN', orderList.map((ele) => ele.id)]}).update({order_status: 102});
+            const couponService = this.service('coupon', 'api');
             for (const item of orderList) {
 
                 let orderId = item.id;
@@ -42,6 +43,7 @@ module.exports = class extends Base {
                 }).update({
                     order_status: 102
                 });
+                await couponService.releaseLockedCoupons(orderId);
             }
         }
         // 定时将到期的广告停掉
@@ -78,6 +80,8 @@ module.exports = class extends Base {
                 });
             }
         }
+        const couponService = this.service('coupon', 'api');
+        await couponService.expireCouponsBatch();
     }
     async resetSqlAction() {
         let time = parseInt(new Date().getTime() / 1000 + 300);
@@ -87,5 +91,15 @@ module.exports = class extends Base {
             console.log('重置了！');
         }
         console.log('还没到呢！');
+    }
+    async processGoodsImportTaskAction() {
+        try {
+            const service = this.service('goods_import', 'admin');
+            const result = await service.processNextPendingTask();
+            return this.success(result);
+        } catch (error) {
+            console.error('处理商品导入任务失败:', error);
+            return this.fail(500, error.message || '处理商品导入任务失败');
+        }
     }
 };

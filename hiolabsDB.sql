@@ -163,7 +163,7 @@ CREATE TABLE `hiolabs_admin_permission` (
   `is_delete` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE KEY `perm_key_unique` (`perm_key`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=40 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=80 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -186,17 +186,40 @@ INSERT INTO `hiolabs_admin_permission` VALUES
 (11,'menu.settings.shipper','快递设置','menu',6,'/dashboard/shipper','',1,0),
 (12,'menu.settings.admin','管理员','menu',6,'/dashboard/admin','',1,0),
 (13,'menu.settings.role','角色权限','menu',6,'/dashboard/role','',1,0),
-(21,'admin:admin.index','管理员列表接口','api',0,'/admin/admin','GET',1,0),
-(22,'admin:admin.admindetail','管理员详情接口','api',0,'/admin/admin/adminDetail','POST',1,0),
-(23,'admin:admin.adminadd','管理员新增接口','api',0,'/admin/admin/adminAdd','POST',1,0),
-(24,'admin:admin.adminsave','管理员编辑接口','api',0,'/admin/admin/adminSave','POST',1,0),
-(25,'admin:admin.deleadmin','管理员删除接口','api',0,'/admin/admin/deleAdmin','POST',1,0),
-(26,'admin:role.list','角色列表接口','api',0,'/admin/role/list','GET',1,0),
-(27,'admin:role.create','角色新增接口','api',0,'/admin/role/create','POST',1,0),
-(28,'admin:role.update','角色编辑接口','api',0,'/admin/role/update','POST',1,0),
-(29,'admin:role.delete','角色删除接口','api',0,'/admin/role/delete','POST',1,0),
-(30,'admin:role.grant','角色授权接口','api',0,'/admin/role/grant','POST',1,0),
-(31,'admin:permission.tree','权限树接口','api',0,'/admin/permission/tree','GET',1,0);
+(14,'menu.goods.import','商品批量导入','menu',3,'/dashboard/goods/import/tasks','',1,0),
+(20,'menu.settings.coupon','优惠券','menu',6,'/dashboard/coupon','',1,0),
+(15,'menu.api','接口权限','menu',0,'','',1,0),
+(16,'menu.api.admin','管理员接口','menu',15,'','',1,0),
+(17,'menu.api.role','角色接口','menu',15,'','',1,0),
+(18,'menu.api.permission','权限接口','menu',15,'','',1,0),
+(19,'menu.api.goods_import','商品导入接口','menu',15,'','',1,0),
+(40,'menu.api.coupon','优惠券接口','menu',15,'','',1,0),
+(21,'admin:admin.index','管理员列表接口','api',16,'/admin/admin','GET',1,0),
+(22,'admin:admin.admindetail','管理员详情接口','api',16,'/admin/admin/adminDetail','POST',1,0),
+(23,'admin:admin.adminadd','管理员新增接口','api',16,'/admin/admin/adminAdd','POST',1,0),
+(24,'admin:admin.adminsave','管理员编辑接口','api',16,'/admin/admin/adminSave','POST',1,0),
+(25,'admin:admin.deleadmin','管理员删除接口','api',16,'/admin/admin/deleAdmin','POST',1,0),
+(26,'admin:role.list','角色列表接口','api',17,'/admin/role/list','GET',1,0),
+(27,'admin:role.create','角色新增接口','api',17,'/admin/role/create','POST',1,0),
+(28,'admin:role.update','角色编辑接口','api',17,'/admin/role/update','POST',1,0),
+(29,'admin:role.delete','角色删除接口','api',17,'/admin/role/delete','POST',1,0),
+(30,'admin:role.grant','角色授权接口','api',17,'/admin/role/grant','POST',1,0),
+(31,'admin:permission.tree','权限树接口','api',18,'/admin/permission/tree','GET',1,0),
+(32,'admin:goods.importtemplate','商品导入模板下载接口','api',19,'/admin/goods/importTemplate','GET',1,0),
+(33,'admin:goods.importtaskcreate','商品导入任务创建接口','api',19,'/admin/goods/importTaskCreate','POST',1,0),
+(34,'admin:goods.importtasklist','商品导入任务列表接口','api',19,'/admin/goods/importTaskList','GET',1,0),
+(35,'admin:goods.importtaskdetail','商品导入任务详情接口','api',19,'/admin/goods/importTaskDetail','GET',1,0),
+(36,'admin:goods.importtaskerrorfile','商品导入错误文件下载接口','api',19,'/admin/goods/importTaskErrorFile','GET',1,0),
+(41,'admin:coupon.list','优惠券列表接口','api',40,'/admin/coupon/list','GET',1,0),
+(42,'admin:coupon.detail','优惠券详情接口','api',40,'/admin/coupon/detail','GET',1,0),
+(43,'admin:coupon.create','优惠券创建接口','api',40,'/admin/coupon/create','POST',1,0),
+(44,'admin:coupon.update','优惠券更新接口','api',40,'/admin/coupon/update','POST',1,0),
+(45,'admin:coupon.toggle','优惠券状态切换接口','api',40,'/admin/coupon/toggle','POST',1,0),
+(46,'admin:coupon.delete','优惠券删除接口','api',40,'/admin/coupon/delete','POST',1,0),
+(47,'admin:coupon.claimrecord','优惠券领取记录接口','api',40,'/admin/coupon/claimRecord','GET',1,0),
+(48,'admin:coupon.userecord','优惠券使用记录接口','api',40,'/admin/coupon/useRecord','GET',1,0),
+(49,'admin:coupon.claimrecordexport','优惠券领取记录导出接口','api',40,'/admin/coupon/claimRecordExport','GET',1,0),
+(50,'admin:coupon.userecordexport','优惠券使用记录导出接口','api',40,'/admin/coupon/useRecordExport','GET',1,0);
 /*!40000 ALTER TABLE `hiolabs_admin_permission` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -610,6 +633,222 @@ INSERT INTO `hiolabs_goods_gallery` VALUES (1,1006002,'https://fyb-shop-bucket.o
 UNLOCK TABLES;
 
 --
+-- Table structure for table `hiolabs_goods_import_error`
+--
+
+DROP TABLE IF EXISTS `hiolabs_goods_import_error`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_goods_import_error` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `task_id` bigint unsigned NOT NULL DEFAULT '0',
+  `sheet_name` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `row_no` int NOT NULL DEFAULT '0',
+  `spu_code` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `goods_sn` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `field_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `error_code` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `error_msg` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `raw_row_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `add_time` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_task_row` (`task_id`,`row_no`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_goods_import_error`
+--
+
+LOCK TABLES `hiolabs_goods_import_error` WRITE;
+/*!40000 ALTER TABLE `hiolabs_goods_import_error` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hiolabs_goods_import_error` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_goods_import_task`
+--
+
+DROP TABLE IF EXISTS `hiolabs_goods_import_task`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_goods_import_task` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `task_no` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `mode` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'import',
+  `status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'pending',
+  `file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `error_file_path` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `operator_id` int NOT NULL DEFAULT '0',
+  `total_spu` int NOT NULL DEFAULT '0',
+  `total_sku` int NOT NULL DEFAULT '0',
+  `success_sku` int NOT NULL DEFAULT '0',
+  `skipped_sku` int NOT NULL DEFAULT '0',
+  `failed_sku` int NOT NULL DEFAULT '0',
+  `summary_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `started_at` int NOT NULL DEFAULT '0',
+  `finished_at` int NOT NULL DEFAULT '0',
+  `add_time` int NOT NULL DEFAULT '0',
+  `update_time` int NOT NULL DEFAULT '0',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `task_no_unique` (`task_no`) USING BTREE,
+  KEY `idx_status_add_time` (`status`,`add_time`) USING BTREE,
+  KEY `idx_operator_add_time` (`operator_id`,`add_time`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_goods_import_task`
+--
+
+LOCK TABLES `hiolabs_goods_import_task` WRITE;
+/*!40000 ALTER TABLE `hiolabs_goods_import_task` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hiolabs_goods_import_task` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_coupon`
+--
+
+DROP TABLE IF EXISTS `hiolabs_coupon`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_coupon` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `coupon_key` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'full_reduction',
+  `threshold_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `reduce_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `discount_rate` decimal(5,2) NOT NULL DEFAULT '10.00',
+  `discount_max_reduce` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `scope_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'all',
+  `segment_rules_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `claim_start_at` int NOT NULL DEFAULT '0',
+  `claim_end_at` int NOT NULL DEFAULT '0',
+  `use_start_at` int NOT NULL DEFAULT '0',
+  `use_end_at` int NOT NULL DEFAULT '0',
+  `total_limit` int NOT NULL DEFAULT '0',
+  `received_count` int NOT NULL DEFAULT '0',
+  `used_count` int NOT NULL DEFAULT '0',
+  `per_user_limit` int NOT NULL DEFAULT '1',
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'draft',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int NOT NULL DEFAULT '0',
+  `update_time` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_coupon_key` (`coupon_key`) USING BTREE,
+  KEY `idx_status_time` (`status`,`use_start_at`,`use_end_at`) USING BTREE,
+  KEY `idx_claim_time` (`claim_start_at`,`claim_end_at`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_coupon`
+--
+
+LOCK TABLES `hiolabs_coupon` WRITE;
+/*!40000 ALTER TABLE `hiolabs_coupon` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hiolabs_coupon` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_coupon_goods`
+--
+
+DROP TABLE IF EXISTS `hiolabs_coupon_goods`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_coupon_goods` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `coupon_id` int unsigned NOT NULL DEFAULT '0',
+  `goods_id` int NOT NULL DEFAULT '0',
+  `add_time` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_coupon_goods` (`coupon_id`,`goods_id`) USING BTREE,
+  KEY `idx_goods_id` (`goods_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_coupon_goods`
+--
+
+LOCK TABLES `hiolabs_coupon_goods` WRITE;
+/*!40000 ALTER TABLE `hiolabs_coupon_goods` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hiolabs_coupon_goods` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_user_coupon`
+--
+
+DROP TABLE IF EXISTS `hiolabs_user_coupon`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_user_coupon` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `coupon_id` int unsigned NOT NULL DEFAULT '0',
+  `user_id` int unsigned NOT NULL DEFAULT '0',
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'unused',
+  `claim_time` int NOT NULL DEFAULT '0',
+  `lock_time` int NOT NULL DEFAULT '0',
+  `used_time` int NOT NULL DEFAULT '0',
+  `expire_time` int NOT NULL DEFAULT '0',
+  `lock_order_id` int unsigned NOT NULL DEFAULT '0',
+  `used_order_id` int unsigned NOT NULL DEFAULT '0',
+  `discount_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_user_coupon_once` (`user_id`,`coupon_id`) USING BTREE,
+  KEY `idx_user_status_expire` (`user_id`,`status`,`expire_time`) USING BTREE,
+  KEY `idx_order_lock` (`lock_order_id`,`status`) USING BTREE,
+  KEY `idx_order_used` (`used_order_id`,`status`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_user_coupon`
+--
+
+LOCK TABLES `hiolabs_user_coupon` WRITE;
+/*!40000 ALTER TABLE `hiolabs_user_coupon` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hiolabs_user_coupon` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_order_coupon`
+--
+
+DROP TABLE IF EXISTS `hiolabs_order_coupon`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_order_coupon` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `order_id` int unsigned NOT NULL DEFAULT '0',
+  `user_coupon_id` bigint unsigned NOT NULL DEFAULT '0',
+  `coupon_id` int unsigned NOT NULL DEFAULT '0',
+  `coupon_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `coupon_name_snapshot` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `discount_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `add_time` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_order_id` (`order_id`) USING BTREE,
+  KEY `idx_user_coupon_id` (`user_coupon_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hiolabs_order_coupon`
+--
+
+LOCK TABLES `hiolabs_order_coupon` WRITE;
+/*!40000 ALTER TABLE `hiolabs_order_coupon` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hiolabs_order_coupon` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `hiolabs_goods_specification`
 --
 
@@ -756,6 +995,11 @@ LOCK TABLES `hiolabs_order` WRITE;
 INSERT INTO `hiolabs_order` VALUES (1325,'20191005104128963425',1048,300,0,0,0,2,'测试',0,3,38,422,'测试地址','1、懒人椅【1】 ','13333232323','',NULL,0.00,'','4200000443201911295307326072',0.10,0.10,0.10,0.10,1574995288,1574995362,0,0,0,0,480.00,'需电联客户请优先派送勿放快递柜',0,0),(1326,'20191005104213170448',1048,102,0,0,0,0,'测试',0,3,38,422,'测试地址','1、懒人椅【1】 2、懒人椅【1】 ','13333232323','',NULL,0.00,'','0',0.30,0.30,0.30,0.30,1574995333,0,0,0,0,0,480.00,'需电联客户请优先派送勿放快递柜',0,0),(1327,'20191005104259977005',1048,401,0,1,0,2,'测试',0,3,38,422,'测试地址','1、懒人椅【1】 ','13333232323','',NULL,0.00,'','4200000439201911293966737453',0.10,0.10,0.10,0.10,1574995379,1574995383,1574995431,1582790143,0,0,480.00,'需电联客户请优先派送勿放快递柜',0,0),(1328,'20191005133123894325',1048,300,0,0,0,2,'测试',0,3,38,422,'测试地址','1、懒人椅【1】 ','13333232323','',NULL,0.00,'','4200000432201911295554286798',0.01,0.01,0.01,0.01,1575005483,1575005486,0,0,0,0,480.00,'需电联客户请优先派送勿放快递柜',0,0),(1329,'20191005133306961145',1048,102,0,0,0,0,'测试',0,3,38,422,'测试地址','1、懒人椅【4】 ','13333232323','',NULL,0.00,'','0',0.04,0.04,0.04,0.04,1575005586,0,0,0,0,0,480.00,'需电联客户请优先派送勿放快递柜',0,0),(1330,'20260105190144264147',1048,300,1,0,0,2,'测试',0,3,38,422,'测试地址','1、懒人椅【1】 ','13333232323','',NULL,0.00,'','4200000422201911290938060299',0.01,0.01,0.01,0.01,1575018386,1575018391,0,0,0,0,480.00,'需电联客户请优先派送勿放快递柜',0,0);
 /*!40000 ALTER TABLE `hiolabs_order` ENABLE KEYS */;
 UNLOCK TABLES;
+
+ALTER TABLE `hiolabs_order`
+  ADD COLUMN `coupon_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '优惠券优惠金额',
+  ADD COLUMN `promotions_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '营销优惠金额',
+  ADD COLUMN `coupon_detail_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci COMMENT '优惠券快照明细';
 
 --
 -- Table structure for table `hiolabs_order_express`

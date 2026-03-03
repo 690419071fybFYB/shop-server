@@ -888,6 +888,140 @@ module.exports = class extends Base {
         });
         return this.success();
     }
+    async importTemplateAction() {
+        try {
+            const service = this.service('goods_import', 'admin');
+            const buffer = service.getTemplateBuffer();
+            const filename = `goods_import_template_v1.xlsx`;
+            this.ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            this.ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+            this.ctx.body = buffer;
+            return;
+        } catch (error) {
+            console.error('导出导入模板失败:', error);
+            return this.fail(500, '导出模板失败');
+        }
+    }
+    async importTaskCreateAction() {
+        const file = this.file('file');
+        const mode = String(this.post('mode') || 'import');
+        if (think.isEmpty(file) || !file.path) {
+            return this.fail(400, '请上传 xlsx 文件');
+        }
+        const ext = path.extname(file.name || file.originalFilename || '').toLowerCase();
+        if (ext !== '.xlsx') {
+            return this.fail(400, '仅支持 xlsx 文件');
+        }
+        if (mode !== 'import' && mode !== 'validate_only') {
+            return this.fail(400, 'mode 参数非法');
+        }
+        try {
+            const service = this.service('goods_import', 'admin');
+            const result = await service.createTaskFromUpload(file, mode, think.userId);
+            return this.success(result);
+        } catch (error) {
+            console.error('创建导入任务失败:', error);
+            return this.fail(500, error.message || '创建导入任务失败');
+        } finally {
+            if (file.path) {
+                fs.unlink(file.path, () => {});
+            }
+        }
+    }
+    async importTaskListAction() {
+        const page = this.get('page') || 1;
+        const size = this.get('size') || 10;
+        const taskModel = this.model('goods_import_task');
+        const data = await taskModel.where({
+            is_delete: 0
+        }).order('id DESC').page(page, size).countSelect();
+
+        const operatorIds = Array.from(new Set((data.data || []).map(item => Number(item.operator_id)).filter(id => id > 0)));
+        let operatorMap = {};
+        if (operatorIds.length > 0) {
+            const adminRows = await this.model('admin').where({
+                id: ['IN', operatorIds]
+            }).field('id,username').select();
+            operatorMap = adminRows.reduce((acc, item) => {
+                acc[item.id] = item.username;
+                return acc;
+            }, {});
+        }
+
+        const list = (data.data || []).map((item) => {
+            let summary = {};
+            if (item.summary_json) {
+                try {
+                    summary = JSON.parse(item.summary_json);
+                } catch (err) {
+                    summary = {};
+                }
+            }
+            return {
+                ...item,
+                operator_name: operatorMap[item.operator_id] || '',
+                summary
+            };
+        });
+
+        data.data = list;
+        return this.success(data);
+    }
+    async importTaskDetailAction() {
+        const id = Number(this.get('id'));
+        if (!id) {
+            return this.fail(400, 'id 参数错误');
+        }
+        const task = await this.model('goods_import_task').where({
+            id,
+            is_delete: 0
+        }).find();
+        if (think.isEmpty(task)) {
+            return this.fail(404, '任务不存在');
+        }
+        let summary = {};
+        if (task.summary_json) {
+            try {
+                summary = JSON.parse(task.summary_json);
+            } catch (err) {
+                summary = {};
+            }
+        }
+        const errors = await this.model('goods_import_error').where({
+            task_id: id
+        }).order('id DESC').limit(200).select();
+        let operator = {};
+        if (task.operator_id > 0) {
+            operator = await this.model('admin').where({id: task.operator_id}).field('id,username').find();
+        }
+        return this.success({
+            ...task,
+            summary,
+            operator_name: operator.username || '',
+            errors
+        });
+    }
+    async importTaskErrorFileAction() {
+        const id = Number(this.get('id'));
+        if (!id) {
+            return this.fail(400, 'id 参数错误');
+        }
+        const task = await this.model('goods_import_task').where({
+            id,
+            is_delete: 0
+        }).find();
+        if (think.isEmpty(task)) {
+            return this.fail(404, '任务不存在');
+        }
+        if (!task.error_file_path || !fs.existsSync(task.error_file_path)) {
+            return this.fail(404, '错误文件不存在');
+        }
+        const filename = `${task.task_no || 'goods_import'}_errors.xlsx`;
+        this.ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        this.ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+        this.ctx.body = fs.readFileSync(task.error_file_path);
+        return;
+    }
     async uploadHttpsImageAction() {
         let url = this.post('url');
         try {

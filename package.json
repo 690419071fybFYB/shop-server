@@ -6,7 +6,9 @@
     "start": "node development.js",
     "compile": "babel --no-babelrc src/ --presets think-node --out-dir app/",
     "lint": "eslint src/",
-    "lint-fix": "eslint --fix src/"
+    "lint-fix": "eslint --fix src/",
+    "test:goods-import": "node scripts/test-goods-import.js",
+    "test:coupon": "node scripts/test-coupon.js"
   },
   "dependencies": {
     "cos-nodejs-sdk-v5": "^2.15.4",
@@ -35,6 +37,7 @@
     "think-view-nunjucks": "^1.0.7",
     "thinkjs": "^3.0.0",
     "weixinpay": "^1.0.12",
+    "xlsx": "^0.18.5",
     "xml2js": "^0.4.19"
   },
   "devDependencies": {

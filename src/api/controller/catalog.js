@@ -35,23 +35,27 @@ module.exports = class extends Base {
         const page = this.post('page');
         const size = this.post('size');
         const categoryId = this.post('id');
-        if (categoryId == 0) {
-            let list = await this.model('goods').where({
-                is_on_sale: 1,
-                is_delete: 0
-            }).order({
-                sort_order: 'asc'
-            }).field('name,id,goods_brief,min_retail_price,list_pic_url,goods_number').page(page, size).countSelect();
-            return this.success(list);
-        } else {
-            let list = await this.model('goods').where({
-                is_on_sale: 1,
-                is_delete: 0,
-                category_id: categoryId
-            }).order({
-                sort_order: 'asc'
-            }).field('name,id,goods_brief,min_retail_price,list_pic_url,goods_number').page(page, size).countSelect();
-            return this.success(list);
+        const where = {
+            is_on_sale: 1,
+            is_delete: 0
+        };
+        if (Number(categoryId) !== 0) {
+            where.category_id = categoryId;
         }
+        let list = await this.model('goods').where(where).order({
+            sort_order: 'asc'
+        }).field('name,id,goods_brief,min_retail_price,list_pic_url,goods_number').page(page, size).countSelect();
+        if (Array.isArray(list.data) && list.data.length > 0) {
+            const userId = this.getLoginUserId();
+            if (Number(userId) > 0) {
+                try {
+                    const couponService = this.service('coupon', 'api');
+                    list.data = await couponService.decorateGoodsWithCouponPromo(userId, list.data);
+                } catch (err) {
+                    think.logger && think.logger.error && think.logger.error(`[catalog.currentlist.decorateGoodsWithCouponPromo] ${err.message || err}`);
+                }
+            }
+        }
+        return this.success(list);
     }
 };

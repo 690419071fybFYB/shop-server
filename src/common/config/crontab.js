@@ -10,5 +10,11 @@ module.exports = [{
 		enable: false,
 		immediate: true,
 		handle: "crontab/resetSql"
+	},
+	{
+		interval: '10s',
+		enable: true,
+		immediate: true,
+		handle: "crontab/processGoodsImportTask"
 	}
 ]

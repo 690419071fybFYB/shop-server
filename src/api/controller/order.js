@@ -4,6 +4,10 @@ const rp = require('request-promise');
 const fs = require('fs');
 const http = require("http");
 module.exports = class extends Base {
+    parseSelectedCouponIds(value) {
+        const couponService = this.service('coupon', 'api');
+        return couponService.normalizeIdList(value);
+    }
     /**
      * 获取订单列表
      * @return {Promise} []
@@ -157,6 +161,8 @@ module.exports = class extends Base {
                 await this.model('order').where({
                     id: orderId
                 }).update(updateInfo);
+                const couponService = this.service('coupon', 'api');
+                await couponService.releaseLockedCoupons(orderId);
             }
         }
         orderInfo.add_time = moment.unix(orderInfo.add_time).format('YYYY-MM-DD HH:mm:ss');
@@ -240,6 +246,8 @@ module.exports = class extends Base {
         const succesInfo = await this.model('order').where({
             id: orderId
         }).update(updateInfo);
+        const couponService = this.service('coupon', 'api');
+        await couponService.releaseLockedCoupons(orderId);
         return this.success(succesInfo);
     }
     /**
@@ -303,8 +311,9 @@ module.exports = class extends Base {
         // 获取收货地址信息和计算运费
 		const userId = this.getLoginUserId();;
         const addressId = this.post('addressId');
-        const freightPrice = this.post('freightPrice');
-        const offlinePay = this.post('offlinePay');
+        const freightPrice = Number(this.post('freightPrice') || 0);
+        const offlinePay = Number(this.post('offlinePay') || 0);
+        const selectedUserCouponIds = this.parseSelectedCouponIds(this.post('selectedUserCouponIds') || []);
         let postscript = this.post('postscript');
         const buffer = Buffer.from(postscript); // 留言
         const checkedAddress = await this.model('address').where({
@@ -341,32 +350,34 @@ module.exports = class extends Base {
         if(checkPrice > 0){
             return this.fail(400, '价格发生变化，请重新下单');
         }
-        // 获取订单使用的红包
-        // 如果有用红包，则将红包的数量减少，当减到0时，将该条红包删除
         // 统计商品总价
         let goodsTotalPrice = 0.00;
         for (const cartItem of checkedGoodsList) {
             goodsTotalPrice += cartItem.number * cartItem.retail_price;
         }
+
+        const couponService = this.service('coupon', 'api');
+        const couponPreview = await couponService.previewCartCoupons({
+            userId: userId,
+            cartItems: checkedGoodsList,
+            selectedUserCouponIds: selectedUserCouponIds,
+            freightPrice: freightPrice
+        });
+        if (selectedUserCouponIds.length > 0 && (couponPreview.invalidSelectedIds || []).length > 0) {
+            return this.fail(400, '优惠券不可用，请重新选择');
+        }
+
         // 订单价格计算
         const orderTotalPrice = goodsTotalPrice + freightPrice; // 订单的总价
-        const actualPrice = orderTotalPrice - 0.00; // 减去其它支付的金额后，要实际支付的金额 比如满减等优惠
+        const couponPrice = Number(couponPreview.couponPrice || 0);
+        const actualPrice = Math.max(0, Number(couponPreview.actualPrice || orderTotalPrice)); // 减去其它支付的金额后，要实际支付的金额 比如满减等优惠
         const currentTime = parseInt(new Date().getTime() / 1000);
         let print_info = '';
         for (const item in checkedGoodsList) {
             let i = Number(item) + 1;
             print_info = print_info + i + '、' + checkedGoodsList[item].goods_aka + '【' + checkedGoodsList[item].number + '】 ';
         }
-        let def = await this.model('settings').where({
-            id: 1
-        }).find();
-        let sender_name = def.Name;
-        let sender_mobile = def.Tel;
-        // let sender_address = '';
-        let userInfo = await this.model('user').where({
-            id: userId
-        }).find();
-        // const checkedAddress = await this.model('address').where({id: addressId}).find();
+
         const orderInfo = {
             order_sn: this.model('order').generateOrderNumber(),
             user_id: userId,
@@ -386,33 +397,55 @@ module.exports = class extends Base {
             order_price: orderTotalPrice,
             actual_price: actualPrice,
             change_price: actualPrice,
+            coupon_price: couponPrice,
+            promotions_price: couponPrice,
+            coupon_detail_json: JSON.stringify(couponPreview.selectedCoupons || []),
             print_info: print_info,
             offline_pay:offlinePay
         };
         // 开启事务，插入订单信息和订单商品
-        const orderId = await this.model('order').add(orderInfo);
-        orderInfo.id = orderId;
-        if (!orderId) {
-            return this.fail('订单提交失败');
-        }
-        // 将商品信息录入数据库
-        const orderGoodsData = [];
-        for (const goodsItem of checkedGoodsList) {
-            orderGoodsData.push({
-                user_id: userId,
-                order_id: orderId,
-                goods_id: goodsItem.goods_id,
-                product_id: goodsItem.product_id,
-                goods_name: goodsItem.goods_name,
-                goods_aka: goodsItem.goods_aka,
-                list_pic_url: goodsItem.list_pic_url,
-                retail_price: goodsItem.retail_price,
-                number: goodsItem.number,
-                goods_specifition_name_value: goodsItem.goods_specifition_name_value,
-                goods_specifition_ids: goodsItem.goods_specifition_ids
-            });
-        }
-        await this.model('order_goods').addMany(orderGoodsData);
+        const transactionModel = this.model('order');
+        await transactionModel.transaction(async () => {
+            const bindModel = (name) => {
+                const model = transactionModel.model(name);
+                model.db(transactionModel.db());
+                return model;
+            };
+            const orderModel = bindModel('order');
+            const orderGoodsModel = bindModel('order_goods');
+            const orderId = await orderModel.add(orderInfo);
+            orderInfo.id = orderId;
+            if (!orderId) {
+                throw new Error('订单提交失败');
+            }
+            // 将商品信息录入数据库
+            const orderGoodsData = [];
+            for (const goodsItem of checkedGoodsList) {
+                orderGoodsData.push({
+                    user_id: userId,
+                    order_id: orderId,
+                    goods_id: goodsItem.goods_id,
+                    product_id: goodsItem.product_id,
+                    goods_name: goodsItem.goods_name,
+                    goods_aka: goodsItem.goods_aka,
+                    list_pic_url: goodsItem.list_pic_url,
+                    retail_price: goodsItem.retail_price,
+                    number: goodsItem.number,
+                    goods_specifition_name_value: goodsItem.goods_specifition_name_value,
+                    goods_specifition_ids: goodsItem.goods_specifition_ids
+                });
+            }
+            await orderGoodsModel.addMany(orderGoodsData);
+            if ((couponPreview.selectedCoupons || []).length > 0) {
+                await couponService.lockOrConsumeCouponsForOrder({
+                    userId: userId,
+                    orderId: orderId,
+                    selectedCoupons: couponPreview.selectedCoupons,
+                    consumeDirect: offlinePay === 1,
+                    transactionModel
+                });
+            }
+        });
         await this.model('cart').clearBuyGoods();
         return this.success({
             orderInfo: orderInfo
