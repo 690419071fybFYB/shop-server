@@ -1,7 +1,11 @@
-const COS = require('cos-nodejs-sdk-v5');
-const request = require('request');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const dns = require('dns');
+const https = require('https');
+const net = require('net');
 const path = require('path');
 const mime = require('mime-types');
+const urlUtil = require('url');
 
 module.exports = class extends think.Service {
   constructor() {
@@ -10,28 +14,35 @@ module.exports = class extends think.Service {
     this.region = ossConfig.region;
     this.bucket = ossConfig.bucket;
     this.domain = (ossConfig.domain || '').replace(/\/+$/, '');
-    this.client = new COS({
-      SecretId: ossConfig.accessKeyId,
-      SecretKey: ossConfig.accessKeySecret
+    this.accessKeyId = String(ossConfig.accessKeyId || '');
+    this.accessKeySecret = String(ossConfig.accessKeySecret || '');
+    this.client = new S3Client({
+      region: this.region,
+      endpoint: `https://cos.${this.region}.myqcloud.com`,
+      forcePathStyle: false,
+      credentials: {
+        accessKeyId: this.accessKeyId,
+        secretAccessKey: this.accessKeySecret
+      }
     });
+    this.maxFetchBytes = Number(ossConfig.maxFetchBytes || 10 * 1024 * 1024);
+    this.maxRedirects = Number(ossConfig.maxRedirects || 3);
   }
 
   ensureConfig() {
-    if (!this.region || !this.bucket) {
+    if (!this.region || !this.bucket || !this.accessKeyId || !this.accessKeySecret) {
       throw new Error('COS配置不完整');
     }
   }
 
-  requestCos(method, params) {
-    return new Promise((resolve, reject) => {
-      this.client[method](params, (err, data) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(data);
-      });
+  async putObject(key, body, contentType) {
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType || 'application/octet-stream'
     });
+    await this.client.send(command);
   }
 
   buildUrl(key) {
@@ -39,6 +50,126 @@ module.exports = class extends think.Service {
       return `${this.domain}/${key}`;
     }
     return `https://${this.bucket}.cos.${this.region}.myqcloud.com/${key}`;
+  }
+
+  isBlockedHostname(hostname) {
+    const host = String(hostname || '').trim().toLowerCase();
+    if (!host) {
+      return true;
+    }
+    if (host === 'localhost' || host === 'localhost.localdomain') {
+      return true;
+    }
+    if (host.endsWith('.local')) {
+      return true;
+    }
+    return false;
+  }
+
+  isPrivateIpv4(ip) {
+    const parts = String(ip || '').split('.').map(n => Number(n));
+    if (parts.length !== 4 || parts.some(n => Number.isNaN(n) || n < 0 || n > 255)) {
+      return true;
+    }
+    const [a, b] = parts;
+    if (a === 10 || a === 127 || a === 0) {
+      return true;
+    }
+    if (a === 169 && b === 254) {
+      return true;
+    }
+    if (a === 172 && b >= 16 && b <= 31) {
+      return true;
+    }
+    if (a === 192 && b === 168) {
+      return true;
+    }
+    if (a >= 224) {
+      return true;
+    }
+    return false;
+  }
+
+  isPrivateIpv6(ip) {
+    const value = String(ip || '').toLowerCase();
+    if (!value) {
+      return true;
+    }
+    if (value === '::1' || value === '::') {
+      return true;
+    }
+    if (value.startsWith('fc') || value.startsWith('fd')) {
+      return true;
+    }
+    if (value.startsWith('fe8') || value.startsWith('fe9') || value.startsWith('fea') || value.startsWith('feb')) {
+      return true;
+    }
+    if (value.startsWith('::ffff:')) {
+      const ipv4 = value.replace('::ffff:', '');
+      return this.isPrivateIpv4(ipv4);
+    }
+    return false;
+  }
+
+  isDisallowedIp(ip) {
+    const family = net.isIP(ip);
+    if (family === 4) {
+      return this.isPrivateIpv4(ip);
+    }
+    if (family === 6) {
+      return this.isPrivateIpv6(ip);
+    }
+    return true;
+  }
+
+  resolveHostname(hostname) {
+    return new Promise((resolve, reject) => {
+      dns.lookup(hostname, { all: true }, (err, addresses) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        const list = (addresses || [])
+          .map(item => (item && item.address ? String(item.address) : ''))
+          .filter(Boolean);
+        resolve(list);
+      });
+    });
+  }
+
+  async assertRemoteUrlSafe(remoteUrl) {
+    const rawUrl = String(remoteUrl || '').trim();
+    if (!rawUrl) {
+      throw new Error('invalid_url_empty');
+    }
+    let parsed;
+    try {
+      parsed = urlUtil.parse(rawUrl);
+    } catch (err) {
+      throw new Error('invalid_url_parse_failed');
+    }
+    const protocol = String(parsed.protocol || '').toLowerCase();
+    if (protocol !== 'https:') {
+      throw new Error('invalid_url_protocol');
+    }
+    const hostname = String(parsed.hostname || '').trim().toLowerCase();
+    if (this.isBlockedHostname(hostname)) {
+      throw new Error('invalid_url_hostname');
+    }
+    let ipList = [];
+    if (net.isIP(hostname)) {
+      ipList = [hostname];
+    } else {
+      ipList = await this.resolveHostname(hostname);
+    }
+    if (!ipList.length) {
+      throw new Error('dns_resolve_empty');
+    }
+    const blockedIp = ipList.find(ip => this.isDisallowedIp(ip));
+    if (blockedIp) {
+      throw new Error(`blocked_ip_${blockedIp}`);
+    }
+    return rawUrl;
   }
 
   /**
@@ -49,13 +180,12 @@ module.exports = class extends think.Service {
     this.ensureConfig();
     try {
       const key = think.uuid(32);
-      const uploadUrl = this.client.getObjectUrl({
+      const command = new PutObjectCommand({
         Bucket: this.bucket,
-        Region: this.region,
-        Key: key,
-        Method: 'PUT',
-        Sign: true,
-        Expires: 600
+        Key: key
+      });
+      const uploadUrl = await getSignedUrl(this.client, command, {
+        expiresIn: 600
       });
       return {
         uploadUrl,
@@ -83,13 +213,7 @@ module.exports = class extends think.Service {
         : path.extname(filePath).replace('.', '');
       const safeExt = (ext || 'jpg').replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
       const key = `${folder}/${think.uuid(32)}.${safeExt}`;
-      await this.requestCos('putObject', {
-        Bucket: this.bucket,
-        Region: this.region,
-        Key: key,
-        Body: require('fs').createReadStream(filePath),
-        ContentType: contentType
-      });
+      await this.putObject(key, require('fs').createReadStream(filePath), contentType);
       return {
         key,
         url: this.buildUrl(key)
@@ -100,32 +224,79 @@ module.exports = class extends think.Service {
     }
   }
 
-  downloadRemote(url) {
+  downloadRemote(remoteUrl, redirectCount = 0) {
+    if (redirectCount > this.maxRedirects) {
+      return Promise.reject(new Error('too_many_redirects'));
+    }
     return new Promise((resolve, reject) => {
-      request.get(
-        {
-          url,
-          encoding: null,
-          timeout: 15000,
-          strictSSL: false,
-          followAllRedirects: true,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; hioshop-cos-uploader/1.0)'
-          }
-        },
-        (err, response, body) => {
-          if (err) {
-            reject(err);
-            return;
-          }
-          if (!response || response.statusCode !== 200 || !body) {
-            reject(new Error(`download_failed_status_${response ? response.statusCode : 'unknown'}`));
-            return;
-          }
-          const contentType = String(response.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-          resolve({ body, contentType });
+      const req = https.get(remoteUrl, {
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; hioshop-cos-uploader/1.0)',
+          Accept: 'image/*'
         }
-      );
+      }, async response => {
+        const statusCode = Number(response && response.statusCode ? response.statusCode : 0);
+        if (statusCode >= 300 && statusCode < 400 && response && response.headers && response.headers.location) {
+          response.resume();
+          try {
+            const nextUrl = urlUtil.resolve(remoteUrl, response.headers.location);
+            await this.assertRemoteUrlSafe(nextUrl);
+            const result = await this.downloadRemote(nextUrl, redirectCount + 1);
+            resolve(result);
+          } catch (redirectError) {
+            reject(redirectError);
+          }
+          return;
+        }
+        if (statusCode !== 200) {
+          response.resume();
+          reject(new Error(`download_failed_status_${statusCode || 'unknown'}`));
+          return;
+        }
+        const contentType = String((response.headers && response.headers['content-type']) || '')
+          .split(';')[0]
+          .trim()
+          .toLowerCase();
+        if (!contentType || !contentType.startsWith('image/')) {
+          response.resume();
+          reject(new Error('download_invalid_content_type'));
+          return;
+        }
+        const contentLengthHeader = Number((response.headers && response.headers['content-length']) || 0);
+        if (contentLengthHeader > this.maxFetchBytes) {
+          response.resume();
+          reject(new Error('download_body_too_large'));
+          return;
+        }
+        const chunks = [];
+        let total = 0;
+        response.on('data', chunk => {
+          total += chunk.length;
+          if (total > this.maxFetchBytes) {
+            response.destroy(new Error('download_body_too_large'));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on('end', () => {
+          const body = Buffer.concat(chunks);
+          if (!body || body.length === 0) {
+            reject(new Error('download_empty_body'));
+            return;
+          }
+          resolve({ body, contentType });
+        });
+        response.on('error', err => {
+          reject(err);
+        });
+      });
+      req.on('timeout', () => {
+        req.destroy(new Error('download_timeout'));
+      });
+      req.on('error', err => {
+        reject(err);
+      });
     });
   }
 
@@ -138,17 +309,12 @@ module.exports = class extends think.Service {
   async fetchAndUpload(remoteUrl) {
     this.ensureConfig();
     try {
-      const { body, contentType } = await this.downloadRemote(remoteUrl);
+      const safeUrl = await this.assertRemoteUrlSafe(remoteUrl);
+      const { body, contentType } = await this.downloadRemote(safeUrl);
       const mimeExt = mime.extension(contentType || '') || '';
       const ext = mimeExt ? `.${mimeExt}` : '';
       const key = `fetch/${think.uuid(32)}${ext}`;
-      await this.requestCos('putObject', {
-        Bucket: this.bucket,
-        Region: this.region,
-        Key: key,
-        Body: body,
-        ContentType: contentType || 'image/jpeg'
-      });
+      await this.putObject(key, body, contentType || 'image/jpeg');
       return this.buildUrl(key);
     } catch (error) {
       console.error('抓取并上传图片失败:', error);

@@ -1,6 +1,5 @@
 const Base = require('./base.js');
 const moment = require('moment');
-const md5 = require('md5');
 
 module.exports = class extends Base {
   normalizeRoleIds(roleIds) {
@@ -163,6 +162,7 @@ module.exports = class extends Base {
     const user = this.post('user') || {};
     const username = String(user.username || '').trim();
     let password = String(user.password || '').trim();
+    const passwordService = this.service('password', 'admin');
     const roleIds = this.normalizeRoleIds(this.post('roleIds') || user.roleIds);
     if (!username) {
       return this.fail(400, '管理员用户名不能为空');
@@ -179,13 +179,12 @@ module.exports = class extends Base {
     }
     const upData = {
       username: username,
-      password_salt: 'HIOLABS',
+      password_salt: '',
       last_login_ip: '',
       last_login_time: 0,
       is_delete: 0
     };
-    password = md5(password + '' + upData.password_salt);
-    upData.password = password;
+    upData.password = await passwordService.hashPassword(password);
     const adminId = await this.model('admin').add(upData);
     const assignResult = await this.assignRoles(adminId, roleIds);
     if (assignResult) {
@@ -197,6 +196,7 @@ module.exports = class extends Base {
   async adminSaveAction() {
     const user = this.post('user') || {};
     const change = this.post('change');
+    const passwordService = this.service('password', 'admin');
     const userId = Number(user.id);
     const username = String(user.username || '').trim();
     const roleIds = this.normalizeRoleIds(this.post('roleIds') || user.roleIds);
@@ -212,9 +212,11 @@ module.exports = class extends Base {
     if (change === true || change === 'true' || change === 1) {
       const newPasswordRaw = String(user.newpassword || '').trim();
       if (newPasswordRaw.length > 0) {
-        const dbAdmin = await this.model('admin').where({ id: userId }).find();
-        const salt = dbAdmin.password_salt || 'HIOLABS';
-        upData.password = md5(newPasswordRaw + '' + salt);
+        if (newPasswordRaw.length < 6) {
+          return this.fail(400, '密码请大于6个字符');
+        }
+        upData.password = await passwordService.hashPassword(newPasswordRaw);
+        upData.password_salt = '';
       }
     }
     const ex = await this.model('admin').where({

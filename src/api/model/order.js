@@ -35,7 +35,7 @@ module.exports = class extends think.Model {
      * 获取订单可操作的选项
      * @param orderId
      */
-    async getOrderHandleOption(orderId) {
+    async getOrderHandleOption(orderId, userId) {
         const handleOption = {
             cancel: false, // 取消操作
             delete: false, // 删除操作
@@ -43,9 +43,16 @@ module.exports = class extends think.Model {
             confirm: false, // 确认收货完成订单操作
             cancel_refund: false
         };
-        const orderInfo = await this.where({
+        const where = {
             id: orderId
-        }).find();
+        };
+        if (Number(userId) > 0) {
+            where.user_id = userId;
+        }
+        const orderInfo = await this.where(where).find();
+        if (think.isEmpty(orderInfo)) {
+            return handleOption;
+        }
         // 订单流程：下单成功－》支付订单－》发货－》收货－》评论
         // 订单相关状态字段设计，采用单个字段表示全部的订单状态
         // 1xx表示订单取消和删除等状态：  101订单创建成功等待付款、102订单已取消、103订单已取消(自动)
@@ -182,10 +189,14 @@ module.exports = class extends think.Model {
         return orderInfo;
     }
     // 删除订单，将is_delete置为0
-    async orderDeleteById(orderId) {
-        return this.where({
+    async orderDeleteById(orderId, userId) {
+        const where = {
             id: orderId
-        }).update({
+        };
+        if (Number(userId) > 0) {
+            where.user_id = userId;
+        }
+        return this.where(where).update({
             is_delete: 1
         });
     }

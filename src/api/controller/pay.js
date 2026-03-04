@@ -1,7 +1,4 @@
 const Base = require('./base.js');
-const moment = require('moment');
-const generate = require('nanoid/generate');
-const Jushuitan = require('jushuitan');
 module.exports = class extends Base {
     /**
      * 获取支付的请求参数
@@ -9,31 +6,27 @@ module.exports = class extends Base {
      */
     // 测试时付款，将真实接口注释。 在小程序的services/pay.js中按照提示注释和打开
     async preWeixinPayaAction() {
-        const orderId = this.get('orderId');
-        const orderInfo = await this.model('order').where({
-            id: orderId
-        }).find();
-        let userId = orderInfo.user_id;
-        let result = {
-        	transaction_id: 123123123123,
-        	time_end: parseInt(new Date().getTime() / 1000),
-        }
-        const orderModel = this.model('order');
-        await orderModel.updatePayData(orderInfo.id, result);
-        const couponService = this.service('coupon', 'api');
-        await couponService.consumeCouponsForOrder(orderInfo.id);
-        this.afterPay(orderInfo);
-		return this.success();
+        this.ctx.status = 404;
+        return this.fail(404, '接口不存在');
     }
     // 真实的付款接口
     async preWeixinPayAction() {
+        const userId = this.getLoginUserId();
+        if (userId <= 0) {
+            return this.fail(401, '请先登录');
+        }
         const orderId = this.get('orderId');
         const orderInfo = await this.model('order').where({
-            id: orderId
+            id: orderId,
+            user_id: userId
         }).find();
+        if (think.isEmpty(orderInfo)) {
+            return this.fail(404, '订单不存在');
+        }
         // 再次确认库存和价格
         let orderGoods = await this.model('order_goods').where({
             order_id:orderId,
+            user_id: userId,
             is_delete:0
         }).select();
         let checkPrice = 0;
@@ -54,9 +47,6 @@ module.exports = class extends Base {
         }
         if(checkPrice > 0){
             return this.fail(400, '价格发生变化，请重新下单');
-        }
-        if (think.isEmpty(orderInfo)) {
-            return this.fail(400, '订单已取消');
         }
         if (parseInt(orderInfo.pay_status) !== 0) {
             return this.fail(400, '订单已支付，请不要重复操作');

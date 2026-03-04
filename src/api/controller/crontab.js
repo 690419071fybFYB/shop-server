@@ -1,7 +1,5 @@
 const Base = require('./base.js');
 const moment = require('moment');
-const rp = require('request-promise');
-const http = require("http");
 module.exports = class extends Base {
     async timetaskAction() {
         console.log("=============开始============");

@@ -1,9 +1,12 @@
 const Base = require("./base.js");
-const rp = require("request-promise");
+const httpClient = require("../../common/utils/http");
+const validator = require("../../common/utils/validate");
 module.exports = class extends Base {
   async loginByWeixinAction() {
-    // const code = this.post('code');
-    const code = this.post("code");
+    const code = validator.sanitizeText(this.post("code"), 128);
+    if (!validator.isValidWeixinCode(code)) {
+      return this.fail(400, "code参数不合法");
+    }
     let currentTime = parseInt(new Date().getTime() / 1000);
     const clientIp = ""; // 暂时不记录 ip test git
     // 获取openid
@@ -17,8 +20,15 @@ module.exports = class extends Base {
         appid: think.config("weixin.appid"),
       },
     };
-    let sessionData = await rp(options);
-    sessionData = JSON.parse(sessionData);
+    let sessionData = {};
+    try {
+      sessionData = await httpClient.requestJson(options);
+    } catch (error) {
+      return this.fail(502, "微信登录服务异常");
+    }
+    if (sessionData && Number(sessionData.errcode || 0) !== 0) {
+      return this.fail(400, sessionData.errmsg || "微信登录失败");
+    }
     if (!sessionData.openid) {
       return this.fail("登录失败，openid无效");
     }
@@ -82,12 +92,18 @@ module.exports = class extends Base {
     return this.success();
   }
   async phoneNumberAction() {
-    const code = this.post("code");
-    const encryptedData = this.post("encryptedData");
-    const iv = this.post("iv");
+    const code = validator.sanitizeText(this.post("code"), 128);
+    const encryptedData = validator.sanitizeText(this.post("encryptedData"), 4096);
+    const iv = validator.sanitizeText(this.post("iv"), 512);
     const userId = this.getLoginUserId();
     if (!userId) {
-      return this.fail(100, "未登录");
+      return this.fail(401, "请先登录");
+    }
+    if (code && !validator.isValidWeixinCode(code)) {
+      return this.fail(400, "code参数不合法");
+    }
+    if ((encryptedData && !validator.isLikelyBase64(encryptedData)) || (iv && !validator.isLikelyBase64(iv, 1024))) {
+      return this.fail(400, "手机号授权参数格式不合法");
     }
     if (!code && !(encryptedData && iv)) {
       return this.fail(400, "缺少手机号授权参数");
@@ -118,7 +134,7 @@ module.exports = class extends Base {
         (decryptInfo && (decryptInfo.purePhoneNumber || decryptInfo.phoneNumber)) ||
         "";
     }
-    if (!mobile) {
+    if (!mobile || !validator.isValidMobile(mobile)) {
       return this.fail(500, "获取手机号失败");
     }
     await this.model("user")

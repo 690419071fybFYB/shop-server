@@ -3,22 +3,29 @@ module.exports = class extends Base {
     async loginAction() {
         const username = this.post('username');
         const password = this.post('password');
+        const passwordService = this.service('password', 'admin');
         const admin = await this.model('admin').where({
             username: username
         }).find();
         if (think.isEmpty(admin)) {
             return this.fail(401, '用户名或密码不正确!');
         }
-        if (think.md5(password + '' + admin.password_salt) !== admin.password) {
+        const isPasswordValid = await passwordService.verifyPassword(password, admin.password, admin.password_salt);
+        if (!isPasswordValid) {
             return this.fail(400, '用户名或密码不正确!!');
         }
         // 更新登录信息
-        await this.model('admin').where({
-            id: admin.id
-        }).update({
+        const updatePayload = {
             last_login_time: parseInt(Date.now() / 1000),
             last_login_ip: this.ctx.ip
-        });
+        };
+        if (passwordService.shouldUpgradeHash(admin.password)) {
+            updatePayload.password = await passwordService.hashPassword(password);
+            updatePayload.password_salt = '';
+        }
+        await this.model('admin').where({
+            id: admin.id
+        }).update(updatePayload);
         const TokenSerivce = this.service('token', 'admin');
         let sessionData = {}
         sessionData.user_id = admin.id

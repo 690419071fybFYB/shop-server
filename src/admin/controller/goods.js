@@ -2,7 +2,42 @@ const Base = require('./base.js');
 const moment = require('moment');
 const fs = require('fs');
 const path = require("path");
+const htmlSanitizer = require('../../common/utils/sanitize_html');
 // const qiniu = require('qiniu'); // 已替换为阿里云OSS
+
+const IMPORT_MAX_FILE_SIZE = 5 * 1024 * 1024;
+const IMPORT_ACCEPTED_MIME = [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/octet-stream'
+];
+
+function readFileHeader(filePath, length = 8) {
+    try {
+        const fd = fs.openSync(filePath, 'r');
+        const buffer = Buffer.alloc(length);
+        fs.readSync(fd, buffer, 0, length, 0);
+        fs.closeSync(fd);
+        return buffer;
+    } catch (error) {
+        return null;
+    }
+}
+
+function isZipFileHeader(buffer) {
+    if (!buffer || buffer.length < 4) {
+        return false;
+    }
+    const b0 = buffer[0];
+    const b1 = buffer[1];
+    const b2 = buffer[2];
+    const b3 = buffer[3];
+    if (b0 !== 0x50 || b1 !== 0x4b) {
+        return false;
+    }
+    // ZIP local header / empty archive / split archive signature.
+    return (b2 === 0x03 && b3 === 0x04) || (b2 === 0x05 && b3 === 0x06) || (b2 === 0x07 && b3 === 0x08);
+}
+
 module.exports = class extends Base {
     /**
      * index action
@@ -490,11 +525,12 @@ module.exports = class extends Base {
         return this.success(newData);
     }
     async storeAction() {
-        const values = this.post('info');
+        const values = this.post('info') || {};
         const specData = this.post('specData');
         const specValue = this.post('specValue');
         const cateId = this.post('cateId');
         const model = this.model('goods');
+        values.goods_desc = htmlSanitizer.sanitizeRichText(values.goods_desc);
         let picUrl = values.list_pic_url;
         let goods_id = values.id;
         values.category_id = cateId;
@@ -891,7 +927,7 @@ module.exports = class extends Base {
     async importTemplateAction() {
         try {
             const service = this.service('goods_import', 'admin');
-            const buffer = service.getTemplateBuffer();
+            const buffer = await service.getTemplateBuffer();
             const filename = `goods_import_template_v1.xlsx`;
             this.ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             this.ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
@@ -908,9 +944,22 @@ module.exports = class extends Base {
         if (think.isEmpty(file) || !file.path) {
             return this.fail(400, '请上传 xlsx 文件');
         }
+        if (Number(file.size || 0) <= 0) {
+            return this.fail(400, '上传文件为空');
+        }
+        if (Number(file.size || 0) > IMPORT_MAX_FILE_SIZE) {
+            return this.fail(400, `文件过大，最大支持 ${IMPORT_MAX_FILE_SIZE / 1024 / 1024}MB`);
+        }
+        if (file.type && IMPORT_ACCEPTED_MIME.indexOf(file.type) === -1) {
+            return this.fail(400, '文件类型不支持，仅允许 xlsx');
+        }
         const ext = path.extname(file.name || file.originalFilename || '').toLowerCase();
         if (ext !== '.xlsx') {
             return this.fail(400, '仅支持 xlsx 文件');
+        }
+        const header = readFileHeader(file.path, 8);
+        if (!isZipFileHeader(header)) {
+            return this.fail(400, '文件内容不合法，仅支持 xlsx');
         }
         if (mode !== 'import' && mode !== 'validate_only') {
             return this.fail(400, 'mode 参数非法');
@@ -1023,14 +1072,19 @@ module.exports = class extends Base {
         return;
     }
     async uploadHttpsImageAction() {
-        let url = this.post('url');
+        const remoteUrl = String(this.post('url') || '').trim();
+        if (!remoteUrl || remoteUrl.length > 2048) {
+            return this.fail(400, '图片地址不合法');
+        }
         try {
             const ossService = this.service('oss');
-            const ossUrl = await ossService.fetchAndUpload(url);
+            const ossUrl = await ossService.fetchAndUpload(remoteUrl);
+            console.info(`[uploadHttpsImage] operator=${think.userId || 0} target=${remoteUrl} result=success`);
             return this.success(ossUrl);
         } catch (error) {
+            console.warn(`[uploadHttpsImage] operator=${think.userId || 0} target=${remoteUrl} result=failed reason=${error && error.message ? error.message : 'unknown'}`);
             console.error('上传HTTPS图片失败:', error);
-            return this.fail('上传失败');
+            return this.fail(400, '上传失败');
         }
     }
 };

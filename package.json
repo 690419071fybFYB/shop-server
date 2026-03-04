@@ -8,26 +8,24 @@
     "lint": "eslint src/",
     "lint-fix": "eslint --fix src/",
     "test:goods-import": "node scripts/test-goods-import.js",
-    "test:coupon": "node scripts/test-coupon.js"
+    "test:coupon": "node scripts/test-coupon.js",
+    "test:cos-smoke": "node scripts/test-cos-smoke.js"
   },
   "dependencies": {
-    "cos-nodejs-sdk-v5": "^2.15.4",
-    "gm": "^1.23.0",
-    "jsonwebtoken": "^8.0.0",
-    "jushuitan": "^1.0.2",
+    "@aws-sdk/client-s3": "^3.857.0",
+    "@aws-sdk/s3-request-presigner": "^3.857.0",
+    "bcryptjs": "^2.4.3",
+    "exceljs": "^4.4.0",
+    "jsonwebtoken": "^9.0.3",
     "kcors": "^2.2.1",
     "lodash": "^4.17.4",
     "md5": "^2.2.1",
     "mime-types": "^2.1.24",
-    "moment": "^2.18.1",
+    "moment": "^2.30.1",
     "mysql2": "^3.9.7",
-    "nanoid": "^2.1.1",
-    "node-wget": "^0.4.3",
+    "nanoid": "^3.3.11",
     "pinyin": "^2.9.0",
-    "qiniu": "^7.2.1",
-    "querystring": "^0.2.0",
-    "request": "^2.81.0",
-    "request-promise": "^4.2.1",
+    "sanitize-html": "^2.17.1",
     "think-cache": "^1.0.0",
     "think-cache-file": "^1.0.8",
     "think-logger3": "^1.0.0",
@@ -35,10 +33,7 @@
     "think-model-mysql": "^1.0.0",
     "think-view": "^1.0.11",
     "think-view-nunjucks": "^1.0.7",
-    "thinkjs": "^3.0.0",
-    "weixinpay": "^1.0.12",
-    "xlsx": "^0.18.5",
-    "xml2js": "^0.4.19"
+    "thinkjs": "^3.0.0"
   },
   "devDependencies": {
     "babel-cli": "^6.24.1",
@@ -57,7 +52,13 @@
   },
   "overrides": {
     "log4js": "^6.9.1",
-    "mysql": "^2.18.1"
+    "mysql": "^2.18.1",
+    "fast-xml-parser": "^4.5.4",
+    "validator": "^13.15.26",
+    "xml2js": "^0.6.2",
+    "form-data": "^2.5.4",
+    "qs": "^6.14.1",
+    "minimist": "^1.2.8"
   },
   "readmeFilename": "README.md"
 }

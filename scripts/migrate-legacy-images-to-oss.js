@@ -2,9 +2,11 @@
 /* eslint-disable no-console */
 const path = require('path');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 const mysql = require('mysql2/promise');
 const COS = require('cos-nodejs-sdk-v5');
-const request = require('request');
+const urlUtil = require('url');
 
 const dbConfig = require(path.join(__dirname, '../src/common/config/database.js'));
 const appConfig = require(path.join(__dirname, '../src/common/config/config.js'));
@@ -107,28 +109,51 @@ function inferExtByUrl(url) {
   return '';
 }
 
-function downloadImage(url) {
+function downloadImage(url, redirectCount = 0) {
+  if (redirectCount > 3) {
+    return Promise.reject(new Error('download_redirect_too_many'));
+  }
   return new Promise((resolve, reject) => {
-    request.get(
-      {
-        url,
-        encoding: null,
-        timeout: 5000,
-        strictSSL: false,
-        followAllRedirects: true,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; hioshop-image-migrator/1.0)'
-        }
-      },
-      (err, response, body) => {
-        if (err) return reject(err);
-        if (!response || response.statusCode !== 200) {
-          return reject(new Error(`download_failed_status_${response ? response.statusCode : 'unknown'}`));
-        }
-        const contentType = (response.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-        resolve({ body, contentType });
+    const parsed = urlUtil.parse(url);
+    const transport = parsed.protocol === 'https:' ? https : http;
+    const req = transport.get(url, {
+      timeout: 5000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; hioshop-image-migrator/1.0)'
       }
-    );
+    }, async (response) => {
+      const statusCode = Number(response && response.statusCode ? response.statusCode : 0);
+      if (statusCode >= 300 && statusCode < 400 && response && response.headers && response.headers.location) {
+        response.resume();
+        try {
+          const nextUrl = urlUtil.resolve(url, response.headers.location);
+          const result = await downloadImage(nextUrl, redirectCount + 1);
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+        return;
+      }
+      if (statusCode !== 200) {
+        response.resume();
+        reject(new Error(`download_failed_status_${statusCode || 'unknown'}`));
+        return;
+      }
+      const chunks = [];
+      response.on('data', chunk => {
+        chunks.push(chunk);
+      });
+      response.on('end', () => {
+        const body = Buffer.concat(chunks);
+        const contentType = ((response.headers && response.headers['content-type']) || '').split(';')[0].trim().toLowerCase();
+        resolve({ body, contentType });
+      });
+      response.on('error', reject);
+    });
+    req.on('timeout', () => {
+      req.destroy(new Error('download_timeout'));
+    });
+    req.on('error', reject);
   });
 }
 

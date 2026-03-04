@@ -1,4 +1,5 @@
 const Base = require("./base.js");
+const validator = require("../../common/utils/validate");
 module.exports = class extends Base {
   async showSettingsAction() {
     let info = await this.model("show_settings")
@@ -9,11 +10,20 @@ module.exports = class extends Base {
     return this.success(info);
   }
   async saveAction() {
-    let userId = this.getLoginUserId();
-    let name = this.post("name");
-    let mobile = this.post("mobile");
-    let nickName = this.post("nickName");
-    let avatar = this.post("avatar");
+    const userId = this.getLoginUserId();
+    if (userId <= 0) {
+      return this.fail(401, "请先登录");
+    }
+    const name = validator.sanitizeText(this.post("name"), 32);
+    const mobile = validator.sanitizeText(this.post("mobile"), 32);
+    const nickName = validator.sanitizeText(this.post("nickName"), 64);
+    const avatar = validator.sanitizeAvatarUrl(this.post("avatar"));
+    if (!nickName || nickName === "微信用户") {
+      return this.fail(400, "请输入有效昵称");
+    }
+    if (mobile && !validator.isValidMobile(mobile)) {
+      return this.fail(400, "手机号格式错误");
+    }
     let name_mobile = 0;
     if (name != "" && mobile != "") {
       name_mobile = 1;
@@ -24,7 +34,7 @@ module.exports = class extends Base {
       name: name,
       mobile: mobile,
       nickname: nickname,
-      avatar: avatar,
+      avatar: avatar || "/static/images/default_avatar.png",
       name_mobile: name_mobile,
     };
     let info = await this.model("user")
@@ -43,11 +53,15 @@ module.exports = class extends Base {
         })
         .field("id,mobile,name,nickname,avatar")
         .find();
-      info.nickname = Buffer.from(info.nickname, "base64").toString();
+      try {
+        info.nickname = Buffer.from(info.nickname || "", "base64").toString();
+      } catch (error) {
+        info.nickname = "";
+      }
       return this.success(info);
     }
     else{
-      return this.fail(100,'未登录')
+      return this.fail(401,'请先登录')
     }
   }
 };

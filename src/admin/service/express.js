@@ -1,4 +1,4 @@
-const rp = require('request-promise');
+const httpClient = require('../../common/utils/http');
 const _ = require('lodash');
 module.exports = class extends think.Service {
     async queryExpress(shipperCode, logisticCode, orderCode = '') {
@@ -27,7 +27,7 @@ module.exports = class extends think.Service {
         };
         // post请求
         try {
-            const requestResult = await rp(sendOptions);
+            const requestResult = await httpClient.requestText(sendOptions);
             if (think.isEmpty(requestResult)) {
                 return expressInfo;
             }
@@ -123,7 +123,7 @@ module.exports = class extends think.Service {
         };
         // post请求
         try {
-            const requestResult = await rp(sendOptions);
+            const requestResult = await httpClient.requestText(sendOptions);
             if (think.isEmpty(requestResult)) {
                 return expressInfo;
             }
@@ -225,7 +225,7 @@ module.exports = class extends think.Service {
         };
         // post请求
         try {
-            const requestResult = await rp(sendOptions);
+            const requestResult = await httpClient.requestText(sendOptions);
             if (think.isEmpty(requestResult)) {
                 let i = 0
                 return i;

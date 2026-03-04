@@ -1,6 +1,6 @@
 const Base = require('./base.js');
 const moment = require('moment');
-const rp = require('request-promise');
+const httpClient = require('../../common/utils/http');
 const fs = require('fs');
 const http = require("http");
 module.exports = class extends Base {
@@ -45,7 +45,7 @@ module.exports = class extends Base {
             // 订单状态的处理
             item.order_status_text = await this.model('order').getOrderStatusText(item.id);
             // 可操作的选项
-            item.handleOption = await this.model('order').getOrderHandleOption(item.id);
+            item.handleOption = await this.model('order').getOrderHandleOption(item.id, userId);
             newOrderList.push(item);
         }
         orderList.data = newOrderList;
@@ -168,7 +168,7 @@ module.exports = class extends Base {
         orderInfo.add_time = moment.unix(orderInfo.add_time).format('YYYY-MM-DD HH:mm:ss');
         orderInfo.order_status = '';
         // 订单可操作的选择,删除，支付，收货，评论，退换货
-        const handleOption = await this.model('order').getOrderHandleOption(orderId);
+        const handleOption = await this.model('order').getOrderHandleOption(orderId, userId);
         const textCode = await this.model('order').getOrderTextCode(orderId);
         return this.success({
             orderInfo: orderInfo,
@@ -213,8 +213,11 @@ module.exports = class extends Base {
     async cancelAction() {
         const orderId = this.post('orderId');
 		const userId = this.getLoginUserId();;
+        if (userId <= 0) {
+            return this.fail(401, '请先登录');
+        }
         // 检测是否能够取消
-        const handleOption = await this.model('order').getOrderHandleOption(orderId);
+        const handleOption = await this.model('order').getOrderHandleOption(orderId, userId);
         // console.log('--------------' + handleOption.cancel);
         if (!handleOption.cancel) {
             return this.fail('订单不能取消');
@@ -244,8 +247,12 @@ module.exports = class extends Base {
             }).increment('goods_number', number);
         }
         const succesInfo = await this.model('order').where({
-            id: orderId
+            id: orderId,
+            user_id: userId
         }).update(updateInfo);
+        if (!succesInfo) {
+            return this.fail(404, '订单不存在');
+        }
         const couponService = this.service('coupon', 'api');
         await couponService.releaseLockedCoupons(orderId);
         return this.success(succesInfo);
@@ -256,12 +263,19 @@ module.exports = class extends Base {
      */
     async deleteAction() {
         const orderId = this.post('orderId');
+        const userId = this.getLoginUserId();
+        if (userId <= 0) {
+            return this.fail(401, '请先登录');
+        }
         // 检测是否能够取消
-        const handleOption = await this.model('order').getOrderHandleOption(orderId);
+        const handleOption = await this.model('order').getOrderHandleOption(orderId, userId);
         if (!handleOption.delete) {
             return this.fail('订单不能删除');
         }
-        const succesInfo = await this.model('order').orderDeleteById(orderId);
+        const succesInfo = await this.model('order').orderDeleteById(orderId, userId);
+        if (!succesInfo) {
+            return this.fail(404, '订单不存在');
+        }
         return this.success(succesInfo);
     }
     /**
@@ -270,8 +284,12 @@ module.exports = class extends Base {
      */
     async confirmAction() {
         const orderId = this.post('orderId');
+        const userId = this.getLoginUserId();
+        if (userId <= 0) {
+            return this.fail(401, '请先登录');
+        }
         // 检测是否能够取消
-        const handleOption = await this.model('order').getOrderHandleOption(orderId);
+        const handleOption = await this.model('order').getOrderHandleOption(orderId, userId);
         if (!handleOption.confirm) {
             return this.fail('订单不能确认');
         }
@@ -282,8 +300,12 @@ module.exports = class extends Base {
             confirm_time: currentTime
         };
         const succesInfo = await this.model('order').where({
-            id: orderId
+            id: orderId,
+            user_id: userId
         }).update(updateInfo);
+        if (!succesInfo) {
+            return this.fail(404, '订单不存在');
+        }
         return this.success(succesInfo);
     }
     /**
@@ -292,6 +314,18 @@ module.exports = class extends Base {
      */
     async completeAction() {
         const orderId = this.get('orderId');
+        const userId = this.getLoginUserId();
+        if (userId <= 0) {
+            return this.fail(401, '请先登录');
+        }
+        const orderInfo = await this.model('order').where({
+            id: orderId,
+            user_id: userId,
+            is_delete: 0
+        }).find();
+        if (think.isEmpty(orderInfo)) {
+            return this.fail(404, '订单不存在');
+        }
         // 设置订单已完成
         const currentTime = parseInt(new Date().getTime() / 1000);
         let updateInfo = {
@@ -299,7 +333,8 @@ module.exports = class extends Base {
             dealdone_time: currentTime
         };
         const succesInfo = await this.model('order').where({
-            id: orderId
+            id: orderId,
+            user_id: userId
         }).update(updateInfo);
         return this.success(succesInfo);
     }
@@ -454,13 +489,28 @@ module.exports = class extends Base {
     async updateAction() {
         const addressId = this.post('addressId');
         const orderId = this.post('orderId');
+        const userId = this.getLoginUserId();
+        if (userId <= 0) {
+            return this.fail(401, '请先登录');
+        }
+        const currentOrder = await this.model('order').where({
+            id: orderId,
+            user_id: userId,
+            is_delete: 0
+        }).find();
+        if (think.isEmpty(currentOrder)) {
+            return this.fail(404, '订单不存在');
+        }
         // 备注
         // let postscript = this.post('postscript');
         // const buffer = Buffer.from(postscript);
         const updateAddress = await this.model('address').where({
-            id: addressId
+            id: addressId,
+            user_id: userId
         }).find();
-        const currentTime = parseInt(new Date().getTime() / 1000);
+        if (think.isEmpty(updateAddress)) {
+            return this.fail(400, '收货地址不存在');
+        }
         const orderInfo = {
             // 收货地址和运费
             consignee: updateAddress.name,
@@ -476,7 +526,8 @@ module.exports = class extends Base {
             // add_time: currentTime
         };
         const updateInfo = await this.model('order').where({
-            id: orderId
+            id: orderId,
+            user_id: userId
         }).update(orderInfo);
         return this.success(updateInfo);
     }
@@ -487,6 +538,18 @@ module.exports = class extends Base {
     async expressAction() {
         const currentTime = parseInt(new Date().getTime() / 1000);
         const orderId = this.get('orderId');
+        const userId = this.getLoginUserId();
+        if (userId <= 0) {
+            return this.fail(401, '请先登录');
+        }
+        const orderInfo = await this.model('order').where({
+            id: orderId,
+            user_id: userId,
+            is_delete: 0
+        }).find();
+        if (think.isEmpty(orderInfo)) {
+            return this.fail(404, '订单不存在');
+        }
         let info = await this.model('order_express').where({
             order_id: orderId
         }).find();
@@ -532,7 +595,7 @@ module.exports = class extends Base {
         // return this.success(latestExpressInfo);
     }
     async getExpressInfo(shipperCode, expressNo) {
-		let appCode = "APPCODE "+ think.config('aliexpress.appcode');
+			let appCode = "APPCODE "+ think.config('aliexpress.appcode');
         const options = {
             method: 'GET',
             url: 'http://wuliu.market.alicloudapi.com/kdi?no=' + expressNo + '&type=' + shipperCode,
@@ -541,8 +604,7 @@ module.exports = class extends Base {
                 "Authorization": appCode
             }
         };
-        let sessionData = await rp(options);
-        sessionData = JSON.parse(sessionData);
+        const sessionData = await httpClient.requestJson(options);
         return sessionData.result;
     }
     async getDeliverystatus(status) {

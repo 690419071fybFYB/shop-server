@@ -1,12 +1,26 @@
 const jwt = require('jsonwebtoken');
-const secret = 'SLDLKKDS323ssdd@#@@gf';
+const httpClient = require('../../common/utils/http');
 
-const moment = require('moment');
-const rp = require('request-promise');
-const fs = require('fs');
-const http = require("http");
+const ACCESS_TOKEN_GUARD_SECONDS = 120;
+let cachedAccessToken = '';
+let cachedAccessTokenExpireAt = 0;
 
 module.exports = class extends think.Service {
+    getSecurityConfig() {
+        return think.config('security') || {};
+    }
+    getTokenSecret() {
+        const config = this.getSecurityConfig();
+        return String(config.adminTokenSecret || '').trim();
+    }
+    getTokenAlgorithm() {
+        const config = this.getSecurityConfig();
+        return String(config.tokenAlgorithm || 'HS256').trim() || 'HS256';
+    }
+    getTokenExpiresIn() {
+        const config = this.getSecurityConfig();
+        return config.adminTokenExpiresIn || '12h';
+    }
     /**
      * 根据header中的x-hioshop-token值获取用户id
      */
@@ -39,14 +53,27 @@ module.exports = class extends think.Service {
     }
 
     async create(userInfo) {
-        const token = jwt.sign(userInfo, secret);
+        const secret = this.getTokenSecret();
+        if (!secret) {
+            throw new Error('missing ADMIN_JWT_SECRET');
+        }
+        const token = jwt.sign(userInfo, secret, {
+            algorithm: this.getTokenAlgorithm(),
+            expiresIn: this.getTokenExpiresIn()
+        });
         return token;
     }
 
-    async parse() {
-        if (think.token) {
+    async parse(token = think.token) {
+        const secret = this.getTokenSecret();
+        if (!secret) {
+            return null;
+        }
+        if (token) {
             try {
-                return jwt.verify(think.token, secret);
+                return jwt.verify(token, secret, {
+                    algorithms: [this.getTokenAlgorithm()]
+                });
             } catch (err) {
                 return null;
             }
@@ -63,9 +90,12 @@ module.exports = class extends think.Service {
         return true;
     }
 
-    async getAccessToken() {
+    async getAccessToken(forceRefresh = false) {
+        if (!forceRefresh && cachedAccessToken && Date.now() < cachedAccessTokenExpireAt) {
+            return cachedAccessToken;
+        }
         const options = {
-            method: 'POST',
+            method: 'GET',
             url: 'https://api.weixin.qq.com/cgi-bin/token',
             qs: {
                 grant_type: 'client_credential',
@@ -73,9 +103,18 @@ module.exports = class extends think.Service {
                 appid: think.config('weixin.appid')
             }
         };
-        let sessionData = await rp(options);
-        sessionData = JSON.parse(sessionData);
-        let token = sessionData.access_token;
-        return token;
+        try {
+            const sessionData = await httpClient.requestJson(options);
+            if (!sessionData.access_token) {
+                return '';
+            }
+            const expiresIn = Number(sessionData.expires_in || 7200);
+            const safeSeconds = Math.max(60, expiresIn - ACCESS_TOKEN_GUARD_SECONDS);
+            cachedAccessToken = sessionData.access_token;
+            cachedAccessTokenExpireAt = Date.now() + safeSeconds * 1000;
+            return cachedAccessToken;
+        } catch (err) {
+            return '';
+        }
     }
 };

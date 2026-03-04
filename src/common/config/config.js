@@ -8,6 +8,14 @@ const cosDomain =
 module.exports = {
     default_module: 'api',
 	port: 8360, //服务端口，可自定义
+    security: {
+        apiTokenSecret: process.env.API_JWT_SECRET || '',
+        adminTokenSecret: process.env.ADMIN_JWT_SECRET || '',
+        apiTokenExpiresIn: process.env.API_TOKEN_EXPIRES_IN || '7d',
+        adminTokenExpiresIn: process.env.ADMIN_TOKEN_EXPIRES_IN || '12h',
+        adminPasswordHashRounds: Number(process.env.ADMIN_PASSWORD_HASH_ROUNDS || 10),
+        tokenAlgorithm: 'HS256'
+    },
     weixin: {
         appid: process.env.WEIXIN_APPID || '', // 小程序 appid
         secret: process.env.WEIXIN_SECRET || '', // 小程序密钥

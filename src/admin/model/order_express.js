@@ -1,9 +1,6 @@
 const moment = require('moment');
 const _ = require('lodash');
-const rp = require('request-promise');
-const fs = require('fs');
-const http = require("http");
-const path = require('path');
+const httpClient = require('../../common/utils/http');
 
 module.exports = class extends think.Model {
     get tableName() {
@@ -142,8 +139,7 @@ module.exports = class extends think.Model {
                 "Authorization": appCode
             }
         };
-        let sessionData = await rp(options);
-        sessionData = JSON.parse(sessionData);
+        const sessionData = await httpClient.requestJson(options);
         return sessionData.result;
     }
     async getDeliverystatus(status) {

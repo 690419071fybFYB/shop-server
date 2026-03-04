@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const moment = require('moment');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
+const htmlSanitizer = require('../../common/utils/sanitize_html');
 
 const IMPORT_MODE = {
   IMPORT: 'import',
@@ -113,6 +114,27 @@ module.exports = class extends think.Service {
     return String(value).trim();
   }
 
+  normalizeSheetCell(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    if (typeof value === 'object') {
+      if (Object.prototype.hasOwnProperty.call(value, 'result') && value.result !== undefined && value.result !== null) {
+        return value.result;
+      }
+      if (Object.prototype.hasOwnProperty.call(value, 'text') && value.text !== undefined && value.text !== null) {
+        return value.text;
+      }
+      if (Object.prototype.hasOwnProperty.call(value, 'hyperlink') && value.hyperlink) {
+        return value.hyperlink;
+      }
+      if (Array.isArray(value.richText)) {
+        return value.richText.map(item => item && item.text ? item.text : '').join('');
+      }
+    }
+    return value;
+  }
+
   parseNumber(value) {
     if (value === null || value === undefined || value === '') {
       return null;
@@ -163,8 +185,8 @@ module.exports = class extends think.Service {
     return `GI${moment().format('YYYYMMDDHHmmss')}${Math.floor(Math.random() * 9000 + 1000)}`;
   }
 
-  getTemplateBuffer() {
-    const wb = XLSX.utils.book_new();
+  async getTemplateBuffer() {
+    const wb = new ExcelJS.Workbook();
     const goodsRows = [
       GOODS_HEADERS,
       [
@@ -202,9 +224,13 @@ module.exports = class extends think.Service {
       ]
     ];
 
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(goodsRows), 'goods');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(skuRows), 'sku');
-    return XLSX.write(wb, {bookType: 'xlsx', type: 'buffer'});
+    const goodsSheet = wb.addWorksheet('goods');
+    goodsRows.forEach((row) => goodsSheet.addRow(row));
+    const skuSheet = wb.addWorksheet('sku');
+    skuRows.forEach((row) => skuSheet.addRow(row));
+
+    const buffer = await wb.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 
   saveUploadFile(file) {
@@ -259,7 +285,7 @@ module.exports = class extends think.Service {
   }
 
   readSheetRows(workbook, sheetName, expectedHeaders) {
-    const sheet = workbook.Sheets[sheetName];
+    const sheet = workbook.getWorksheet(sheetName);
     if (!sheet) {
       return {
         rows: [],
@@ -267,7 +293,23 @@ module.exports = class extends think.Service {
       };
     }
 
-    const matrix = XLSX.utils.sheet_to_json(sheet, {header: 1, defval: ''});
+    const matrix = [];
+    const rowCount = Number(sheet.rowCount || 0);
+    const minCols = Number(expectedHeaders.length || 0);
+    for (let rowNo = 1; rowNo <= rowCount; rowNo++) {
+      const row = sheet.getRow(rowNo);
+      const maxCols = Math.max(Number(row.cellCount || 0), minCols);
+      const current = [];
+      for (let colNo = 1; colNo <= maxCols; colNo++) {
+        const value = this.normalizeSheetCell(row.getCell(colNo).value);
+        current.push(value === null || value === undefined ? '' : value);
+      }
+      while (current.length && (current[current.length - 1] === '' || current[current.length - 1] === null || current[current.length - 1] === undefined)) {
+        current.pop();
+      }
+      matrix.push(current);
+    }
+
     if (!Array.isArray(matrix) || matrix.length === 0) {
       return {
         rows: [],
@@ -334,7 +376,8 @@ module.exports = class extends think.Service {
   async validateWorkbook(filePath) {
     let workbook;
     try {
-      workbook = XLSX.readFile(filePath, {cellDates: false, raw: false});
+      workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(filePath);
     } catch (err) {
       return {
         goodsRows: [],
@@ -431,7 +474,7 @@ module.exports = class extends think.Service {
         name,
         category_id: categoryId,
         goods_brief: this.normalizeText(row.goods_brief),
-        goods_desc: this.normalizeText(row.goods_desc),
+        goods_desc: htmlSanitizer.sanitizeRichText(row.goods_desc),
         goods_unit: this.normalizeText(row.goods_unit) || '件',
         is_new: isNew === null ? 0 : isNew,
         is_on_sale: isOnSale === null ? 0 : isOnSale,
@@ -769,8 +812,8 @@ module.exports = class extends think.Service {
     await model.addMany(rows);
   }
 
-  createErrorWorkbookBuffer(errors) {
-    const wb = XLSX.utils.book_new();
+  async createErrorWorkbookBuffer(errors) {
+    const wb = new ExcelJS.Workbook();
     const rows = [
       ['sheet_name', 'row_no', 'spu_code', 'goods_sn', 'field_name', 'error_code', 'error_msg', 'raw_value']
     ];
@@ -786,8 +829,10 @@ module.exports = class extends think.Service {
         item.raw_value || ''
       ]);
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'errors');
-    return XLSX.write(wb, {bookType: 'xlsx', type: 'buffer'});
+    const errorSheet = wb.addWorksheet('errors');
+    rows.forEach((row) => errorSheet.addRow(row));
+    const buffer = await wb.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 
   async saveErrorFile(taskNo, errors) {
@@ -796,7 +841,8 @@ module.exports = class extends think.Service {
     }
     const filename = `${taskNo}_errors.xlsx`;
     const filePath = path.join(this.getErrorDir(), filename);
-    fs.writeFileSync(filePath, this.createErrorWorkbookBuffer(errors));
+    const buffer = await this.createErrorWorkbookBuffer(errors);
+    fs.writeFileSync(filePath, buffer);
     return filePath;
   }
 

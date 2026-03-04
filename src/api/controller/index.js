@@ -1,9 +1,5 @@
 const Base = require('./base.js');
 // const view = require('think-view');
-const moment = require('moment');
-const Jushuitan = require('jushuitan');
-const rp = require('request-promise');
-const http = require("http");
 module.exports = class extends Base {
     async indexAction() {
         //auto render template file index_index.html

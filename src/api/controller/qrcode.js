@@ -1,26 +1,16 @@
 const Base = require('./base.js');
-const rp = require('request-promise');
-const fs = require('fs');
 const http = require("https");
-const path = require('path');
 // const mineType = require('mime-types');
 module.exports = class extends Base {
     async getBase64Action() {
         let goodsId = this.post('goodsId');
         let page = "pages/goods/goods";
         let sceneData = goodsId;
-        const options = {
-            method: 'POST',
-            url: 'https://api.weixin.qq.com/cgi-bin/token',
-            qs: {
-                grant_type: 'client_credential',
-                secret: think.config('weixin.secret'),
-                appid: think.config('weixin.appid')
-            }
-        };
-        let sessionData = await rp(options);
-        sessionData = JSON.parse(sessionData);
-        let token = sessionData.access_token;
+        const weixinService = this.service('weixin', 'api');
+        const token = await weixinService.getAccessToken();
+        if (!token) {
+            return this.fail(500, '获取access_token失败');
+        }
         let data = {
             "scene": sceneData, //第一个参数是抽奖ID，第二个是userId，第三个是share=1
             "page": page,

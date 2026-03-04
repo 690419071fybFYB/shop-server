@@ -3,7 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 
 const BASE_URL = process.env.HIOSHOP_ADMIN_API || 'http://127.0.0.1:8360/admin';
 const ADMIN_USERNAME = process.env.HIOSHOP_ADMIN_USER || 'qilelab.com';
@@ -107,11 +107,62 @@ async function getExpressData(token) {
   return {categoryId, freightTemplateId};
 }
 
-function writeWorkbook(filePath, goodsRows, skuRows) {
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([GOODS_HEADERS, ...goodsRows]), 'goods');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([SKU_HEADERS, ...skuRows]), 'sku');
-  XLSX.writeFile(wb, filePath);
+async function writeWorkbook(filePath, goodsRows, skuRows) {
+  const wb = new ExcelJS.Workbook();
+  const goodsSheet = wb.addWorksheet('goods');
+  [GOODS_HEADERS, ...goodsRows].forEach((row) => goodsSheet.addRow(row));
+  const skuSheet = wb.addWorksheet('sku');
+  [SKU_HEADERS, ...skuRows].forEach((row) => skuSheet.addRow(row));
+  await wb.xlsx.writeFile(filePath);
+}
+
+function normalizeSheetCell(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'object') {
+    if (Object.prototype.hasOwnProperty.call(value, 'result') && value.result !== undefined && value.result !== null) {
+      return value.result;
+    }
+    if (Object.prototype.hasOwnProperty.call(value, 'text') && value.text !== undefined && value.text !== null) {
+      return value.text;
+    }
+    if (Array.isArray(value.richText)) {
+      return value.richText.map(item => item && item.text ? item.text : '').join('');
+    }
+  }
+  return value;
+}
+
+function sheetToObjectRows(sheet) {
+  if (!sheet) return [];
+  const headerRow = sheet.getRow(1);
+  const headers = [];
+  for (let i = 1; i <= Number(headerRow.cellCount || 0); i++) {
+    headers.push(String(normalizeSheetCell(headerRow.getCell(i).value) || '').trim());
+  }
+  if (!headers.length) {
+    return [];
+  }
+  const rows = [];
+  for (let rowNo = 2; rowNo <= Number(sheet.rowCount || 0); rowNo++) {
+    const row = sheet.getRow(rowNo);
+    let hasValue = false;
+    const payload = {};
+    for (let colNo = 1; colNo <= headers.length; colNo++) {
+      const header = headers[colNo - 1] || `col_${colNo}`;
+      const rawValue = normalizeSheetCell(row.getCell(colNo).value);
+      const value = rawValue === null || rawValue === undefined ? '' : String(rawValue);
+      payload[header] = value;
+      if (value !== '') {
+        hasValue = true;
+      }
+    }
+    if (hasValue) {
+      rows.push(payload);
+    }
+  }
+  return rows;
 }
 
 async function createImportTask(token, filePath, mode) {
@@ -166,9 +217,10 @@ async function downloadTemplateAndCheck(token, tempDir) {
 
   const templateFile = path.join(tempDir, 'template.xlsx');
   fs.writeFileSync(templateFile, buf);
-  const wb = XLSX.readFile(templateFile);
-  assert(wb.SheetNames.includes('goods'), '模板缺少 goods sheet');
-  assert(wb.SheetNames.includes('sku'), '模板缺少 sku sheet');
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(templateFile);
+  assert(!!wb.getWorksheet('goods'), '模板缺少 goods sheet');
+  assert(!!wb.getWorksheet('sku'), '模板缺少 sku sheet');
 }
 
 async function downloadErrorFileAndCheck(token, taskId) {
@@ -180,10 +232,11 @@ async function downloadErrorFileAndCheck(token, taskId) {
   const buf = Buffer.from(await response.arrayBuffer());
   assert(buf.length > 0, '错误文件为空');
 
-  const wb = XLSX.read(buf, {type: 'buffer'});
-  const sheet = wb.Sheets.errors;
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  const sheet = wb.getWorksheet('errors');
   assert(sheet, '错误文件缺少 errors sheet');
-  const rows = XLSX.utils.sheet_to_json(sheet, {defval: ''});
+  const rows = sheetToObjectRows(sheet);
   assert(Array.isArray(rows) && rows.length > 0, '错误文件缺少错误行');
   const hasDuplicateSkip = rows.some((row) => String(row.error_code || '').includes('SKIP_DUPLICATE_GOODS_SN'));
   assert(hasDuplicateSkip, '错误文件未包含重复 SKU 跳过错误码');
@@ -228,7 +281,7 @@ async function run() {
     const spuValidate = `AUTO_SPU_VALIDATE_${ts}`;
     const skuValidate = `AUTO_SKU_VALIDATE_${ts}`;
     const validateFile = path.join(tempDir, 'validate_only.xlsx');
-    writeWorkbook(
+    await writeWorkbook(
       validateFile,
       [[
         spuValidate,
@@ -272,7 +325,7 @@ async function run() {
     const spuImport = `AUTO_SPU_IMPORT_${ts}`;
     const skuImport = `AUTO_SKU_IMPORT_${ts}`;
     const importFile = path.join(tempDir, 'import_success.xlsx');
-    writeWorkbook(
+    await writeWorkbook(
       importFile,
       [[
         spuImport,
@@ -315,7 +368,7 @@ async function run() {
     // 用例3：重复 SKU 跳过 + 错误文件
     const spuDup = `AUTO_SPU_DUP_${ts}`;
     const dupFile = path.join(tempDir, 'import_duplicate.xlsx');
-    writeWorkbook(
+    await writeWorkbook(
       dupFile,
       [[
         spuDup,

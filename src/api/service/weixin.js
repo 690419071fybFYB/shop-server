@@ -1,10 +1,64 @@
 const crypto = require('crypto');
 const md5 = require('md5');
 const moment = require('moment');
-const rp = require('request-promise');
-const fs = require('fs');
-const http = require("http");
+const httpClient = require('../../common/utils/http');
+
+const UNIFIED_ORDER_URL = 'https://api.mch.weixin.qq.com/pay/unifiedorder';
+const ACCESS_TOKEN_GUARD_SECONDS = 120;
+let cachedAccessToken = '';
+let cachedAccessTokenExpireAt = 0;
+
 module.exports = class extends think.Service {
+    getNonceStr() {
+        return crypto.randomBytes(16).toString('hex');
+    }
+    filterSignPayload(payload) {
+        const result = {};
+        for (const key of Object.keys(payload || {})) {
+            if (key === 'sign') {
+                continue;
+            }
+            const value = payload[key];
+            if (value === undefined || value === null || value === '') {
+                continue;
+            }
+            result[key] = String(value);
+        }
+        return result;
+    }
+    buildXml(payload) {
+        const keys = Object.keys(payload || {});
+        const nodes = keys.map((key) => {
+            const value = String(payload[key]);
+            if (/^\d+$/.test(value)) {
+                return `<${key}>${value}</${key}>`;
+            }
+            return `<${key}><![CDATA[${value}]]></${key}>`;
+        });
+        return `<xml>${nodes.join('')}</xml>`;
+    }
+    parseXml(xmlText) {
+        const text = String(xmlText || '').trim();
+        if (!text) {
+            return {};
+        }
+        const result = {};
+        const regex = /<([A-Za-z0-9_]+)>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([^<]*))<\/\1>/g;
+        let match = regex.exec(text);
+        while (match) {
+            const key = match[1];
+            if (key !== 'xml') {
+                result[key] = match[2] !== undefined ? match[2] : (match[3] || '');
+            }
+            match = regex.exec(text);
+        }
+        return result;
+    }
+    buildSign(payload) {
+        const signPayload = this.filterSignPayload(payload);
+        const query = this.buildQuery(signPayload);
+        return this.signQuery(query);
+    }
     /**
      * 解析微信登录用户数据
      * @param sessionKey
@@ -40,42 +94,43 @@ module.exports = class extends think.Service {
      * @returns {Promise}
      */
     async createUnifiedOrder(payInfo) {
-        const WeiXinPay = require('weixinpay');
-        const weixinpay = new WeiXinPay({
-            appid: think.config('weixin.appid'), // 微信小程序appid
-            openid: payInfo.openid, // 用户openid
-            mch_id: think.config('weixin.mch_id'), // 商户帐号ID
-            partner_key: think.config('weixin.partner_key') // 秘钥
+        const requestData = {
+            appid: think.config('weixin.appid'),
+            mch_id: think.config('weixin.mch_id'),
+            nonce_str: this.getNonceStr(),
+            body: payInfo.body,
+            out_trade_no: payInfo.out_trade_no,
+            total_fee: String(payInfo.total_fee),
+            spbill_create_ip: payInfo.spbill_create_ip || '127.0.0.1',
+            notify_url: think.config('weixin.notify_url'),
+            trade_type: 'JSAPI',
+            openid: payInfo.openid
+        };
+        requestData.sign = this.buildSign(requestData);
+
+        const xmlBody = this.buildXml(requestData);
+        const responseText = await httpClient.requestText({
+            method: 'POST',
+            url: UNIFIED_ORDER_URL,
+            body: xmlBody,
+            headers: {
+                'Content-Type': 'text/xml; charset=utf-8'
+            }
         });
-        return new Promise((resolve, reject) => {
-            // let total_fee = this.getTotalFee(payInfo.out_trade_no);
-            weixinpay.createUnifiedOrder({
-                body: payInfo.body,
-                out_trade_no: payInfo.out_trade_no,
-                total_fee: payInfo.total_fee,
-                // total_fee: total_fee,
-                spbill_create_ip: payInfo.spbill_create_ip,
-                notify_url: think.config('weixin.notify_url'),
-                trade_type: 'JSAPI'
-            }, (res) => {
-                console.log(res);
-                if (res.return_code === 'SUCCESS' && res.result_code === 'SUCCESS') {
-                    const returnParams = {
-                        'appid': res.appid,
-                        'timeStamp': parseInt(Date.now() / 1000) + '',
-                        'nonceStr': res.nonce_str,
-                        'package': 'prepay_id=' + res.prepay_id,
-                        'signType': 'MD5'
-                    };
-                    const paramStr = `appId=${returnParams.appid}&nonceStr=${returnParams.nonceStr}&package=${returnParams.package}&signType=${returnParams.signType}&timeStamp=${returnParams.timeStamp}&key=` + think.config('weixin.partner_key');
-                    returnParams.paySign = md5(paramStr).toUpperCase();
-                    let order_sn = payInfo.out_trade_no;
-                    resolve(returnParams);
-                } else {
-                    reject(res);
-                }
-            });
-        });
+        const responseData = this.parseXml(responseText);
+        if (responseData.return_code === 'SUCCESS' && responseData.result_code === 'SUCCESS') {
+            const returnParams = {
+                appid: responseData.appid || think.config('weixin.appid'),
+                timeStamp: parseInt(Date.now() / 1000) + '',
+                nonceStr: responseData.nonce_str || requestData.nonce_str,
+                package: `prepay_id=${responseData.prepay_id}`,
+                signType: 'MD5'
+            };
+            const paramStr = `appId=${returnParams.appid}&nonceStr=${returnParams.nonceStr}&package=${returnParams.package}&signType=${returnParams.signType}&timeStamp=${returnParams.timeStamp}&key=${think.config('weixin.partner_key')}`;
+            returnParams.paySign = md5(paramStr).toUpperCase();
+            return returnParams;
+        }
+        throw responseData;
     }
     async getTotalFee(sn) {
         let total_fee = await this.model('order').where({
@@ -148,42 +203,14 @@ module.exports = class extends think.Service {
      * @returns {Promise}
      */
     createRefund(payInfo) {
-        const WeiXinPay = require('weixinpay');
-        const weixinpay = new WeiXinPay({
-            appid: think.config('weixin.appid'), // 微信小程序appid
-            openid: payInfo.openid, // 用户openid
-            mch_id: think.config('weixin.mch_id'), // 商户帐号ID
-            partner_key: think.config('weixin.partner_key') // 秘钥
-        });
-        return new Promise((resolve, reject) => {
-            weixinpay.createUnifiedOrder({
-                body: payInfo.body,
-                out_trade_no: payInfo.out_trade_no,
-                total_fee: payInfo.total_fee,
-                spbill_create_ip: payInfo.spbill_create_ip,
-                notify_url: think.config('weixin.notify_url'),
-                trade_type: 'JSAPI'
-            }, (res) => {
-                if (res.return_code === 'SUCCESS' && res.result_code === 'SUCCESS') {
-                    const returnParams = {
-                        'appid': res.appid,
-                        'timeStamp': parseInt(Date.now() / 1000) + '',
-                        'nonceStr': res.nonce_str,
-                        'package': 'prepay_id=' + res.prepay_id,
-                        'signType': 'MD5'
-                    };
-                    const paramStr = `appId=${returnParams.appid}&nonceStr=${returnParams.nonceStr}&package=${returnParams.package}&signType=${returnParams.signType}&timeStamp=${returnParams.timeStamp}&key=` + think.config('weixin.partner_key');
-                    returnParams.paySign = md5(paramStr).toUpperCase();
-                    resolve(returnParams);
-                } else {
-                    reject(res);
-                }
-            });
-        });
+        return this.createUnifiedOrder(payInfo);
     }
-    async getAccessToken() {
+    async getAccessToken(forceRefresh = false) {
+        if (!forceRefresh && cachedAccessToken && Date.now() < cachedAccessTokenExpireAt) {
+            return cachedAccessToken;
+        }
         const options = {
-            method: 'POST',
+            method: 'GET',
             // url: 'https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=',
             url: 'https://api.weixin.qq.com/cgi-bin/token',
             qs: {
@@ -192,31 +219,53 @@ module.exports = class extends think.Service {
                 appid: think.config('weixin.appid')
             }
         };
-        let sessionData = await rp(options);
-        sessionData = JSON.parse(sessionData);
-        let token = sessionData.access_token;
-        return token;
+        try {
+            const sessionData = await httpClient.requestJson(options);
+            if (!sessionData.access_token) {
+                return '';
+            }
+            const expiresIn = Number(sessionData.expires_in || 7200);
+            const safeSeconds = Math.max(60, expiresIn - ACCESS_TOKEN_GUARD_SECONDS);
+            cachedAccessToken = sessionData.access_token;
+            cachedAccessTokenExpireAt = Date.now() + safeSeconds * 1000;
+            return cachedAccessToken;
+        } catch (err) {
+            return '';
+        }
     }
     async getPhoneNumberByCode(code) {
-        const accessToken = await this.getAccessToken();
-        if (!accessToken) {
+        const requestPhoneNumber = async(accessToken) => {
+            if (!accessToken) {
+                return {
+                    errcode: -1,
+                    errmsg: '获取access_token失败'
+                };
+            }
+            return httpClient.requestJson({
+                method: 'POST',
+                url: 'https://api.weixin.qq.com/wxa/business/getuserphonenumber',
+                qs: {
+                    access_token: accessToken
+                },
+                body: {
+                    code: code
+                },
+                json: true
+            });
+        };
+        try {
+            let data = await requestPhoneNumber(await this.getAccessToken());
+            const errcode = Number(data && data.errcode || 0);
+            if (errcode === 40001 || errcode === 42001) {
+                data = await requestPhoneNumber(await this.getAccessToken(true));
+            }
+            return data;
+        } catch (err) {
             return {
                 errcode: -1,
-                errmsg: '获取access_token失败'
+                errmsg: '获取手机号失败'
             };
         }
-        const options = {
-            method: 'POST',
-            url: 'https://api.weixin.qq.com/wxa/business/getuserphonenumber',
-            qs: {
-                access_token: accessToken
-            },
-            body: {
-                code: code
-            },
-            json: true
-        };
-        return await rp(options);
     }
     async getSelfToken(params) {
         var key = ['meiweiyuxianmeiweiyuxian', params.timestamp, params.nonce].sort().join('');
@@ -238,7 +287,7 @@ module.exports = class extends think.Service {
             body: data,
             json: true
         };
-        let posting = await rp(sendInfo);
+        let posting = await httpClient.requestJson(sendInfo);
         console.log(posting);
         return posting;
     }
@@ -283,7 +332,7 @@ module.exports = class extends think.Service {
             },
             json: true
         };
-        let posting = await rp(sendInfo);
+        let posting = await httpClient.requestJson(sendInfo);
         return posting;
     }
     async sendImageMessage(media_id, data, access_token) {
@@ -299,7 +348,7 @@ module.exports = class extends think.Service {
             },
             json: true
         };
-        let posting = await rp(sendInfo);
+        let posting = await httpClient.requestJson(sendInfo);
         return posting;
     }
 };

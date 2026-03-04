@@ -1,6 +1,20 @@
 const jwt = require('jsonwebtoken');
-const secret = 'sdfsdfsdf123123!ASDasdasdasdasda';
 module.exports = class extends think.Service {
+    getSecurityConfig() {
+        return think.config('security') || {};
+    }
+    getTokenSecret() {
+        const config = this.getSecurityConfig();
+        return String(config.apiTokenSecret || '').trim();
+    }
+    getTokenAlgorithm() {
+        const config = this.getSecurityConfig();
+        return String(config.tokenAlgorithm || 'HS256').trim() || 'HS256';
+    }
+    getTokenExpiresIn() {
+        const config = this.getSecurityConfig();
+        return config.apiTokenExpiresIn || '7d';
+    }
     /**
      * 根据header中的x-hioshop-token值获取用户id
      */
@@ -15,9 +29,15 @@ module.exports = class extends think.Service {
         return result.user_id;
     }
     parse(token) {
+        const secret = this.getTokenSecret();
+        if (!secret) {
+            return null;
+        }
         if (token) {
             try {
-                return jwt.verify(token, secret);
+                return jwt.verify(token, secret, {
+                    algorithms: [this.getTokenAlgorithm()]
+                });
             } catch (err) {
                 return null;
             }
@@ -25,9 +45,16 @@ module.exports = class extends think.Service {
         return null;
     }
 	async create(userInfo) {
-	    const token = jwt.sign(userInfo, secret);
-	    return token;
-	}
+            const secret = this.getTokenSecret();
+            if (!secret) {
+                throw new Error('missing API_JWT_SECRET');
+            }
+            const token = jwt.sign(userInfo, secret, {
+                algorithm: this.getTokenAlgorithm(),
+                expiresIn: this.getTokenExpiresIn()
+            });
+		    return token;
+		}
 	/**
 	 * 根据值获取用户信息
 	 */
@@ -41,8 +68,8 @@ module.exports = class extends think.Service {
 	    }).find();
 	    return think.isEmpty(userInfo) ? null : userInfo;
 	}
-    async verify() {
-        const result = await this.parse();
+    async verify(token) {
+        const result = await this.parse(token);
         if (think.isEmpty(result)) {
             return false;
         }

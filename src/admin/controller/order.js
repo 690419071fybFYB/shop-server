@@ -1,7 +1,6 @@
 const Base = require('./base.js');
 const moment = require('moment');
 const _ = require('lodash');
-// const Jushuitan = require('jushuitan');
 module.exports = class extends Base {
     /**
      * index action

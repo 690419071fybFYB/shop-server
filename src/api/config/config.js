@@ -8,8 +8,7 @@ module.exports = {
     'auth',
     'goods',
     'search',
-    'region',
-    'address'
+    'region'
   ],
 
   // 可以公开访问的Action
@@ -22,5 +21,17 @@ module.exports = {
     'cart/delete',
     'cart/goodscount',
     'pay/notify'
+  ],
+
+  // 需要资料完整（昵称+手机号）的控制器
+  profileRequiredController: [
+    'order',
+    'address',
+    'footprint'
+  ],
+
+  // 需要资料完整（昵称+手机号）的具体动作
+  profileRequiredAction: [
+    'cart/checkout'
   ]
 };

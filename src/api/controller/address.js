@@ -1,9 +1,17 @@
 const Base = require('./base.js');
-const pinyin = require("pinyin");
-const generate = require('nanoid/generate');
+const validator = require('../../common/utils/validate');
+
+function toPositiveInt(value) {
+    const num = Number(value);
+    if (!Number.isInteger(num) || num <= 0) {
+        return 0;
+    }
+    return num;
+}
+
 module.exports = class extends Base {
     async getAddressesAction() {
-		const userId = this.getLoginUserId();;
+		const userId = this.getLoginUserId();
         const addressList = await this.model('address').where({
             user_id: userId,
             is_delete: 0
@@ -20,27 +28,50 @@ module.exports = class extends Base {
     }
     async saveAddressAction() {
         let addressId = this.post('id');
-		const userId = this.getLoginUserId();;
+		const userId = this.getLoginUserId();
+        const name = validator.sanitizeText(this.post('name'), 32);
+        const mobile = validator.sanitizeText(this.post('mobile'), 32);
+        const provinceId = toPositiveInt(this.post('province_id'));
+        const cityId = toPositiveInt(this.post('city_id'));
+        const districtId = toPositiveInt(this.post('district_id'));
+        const address = validator.sanitizeText(this.post('address'), 256);
+        const isDefault = Number(this.post('is_default')) === 1 ? 1 : 0;
+        if (!name) {
+            return this.fail(400, '收货人不能为空');
+        }
+        if (!validator.isValidMobile(mobile)) {
+            return this.fail(400, '手机号格式错误');
+        }
+        if (!provinceId || !cityId || !districtId) {
+            return this.fail(400, '省市区参数错误');
+        }
+        if (!address) {
+            return this.fail(400, '详细地址不能为空');
+        }
         const addressData = {
-            name: this.post('name'),
-            mobile: this.post('mobile'),
-            province_id: this.post('province_id'),
-            city_id: this.post('city_id'),
-            district_id: this.post('district_id'),
-            address: this.post('address'),
-            user_id: this.getLoginUserId(),
-            is_default: this.post('is_default')
+            name: name,
+            mobile: mobile,
+            province_id: provinceId,
+            city_id: cityId,
+            district_id: districtId,
+            address: address,
+            user_id: userId,
+            is_default: isDefault
         };
         if (think.isEmpty(addressId)) {
             addressId = await this.model('address').add(addressData);
         } else {
+            addressId = toPositiveInt(addressId);
+            if (!addressId) {
+                return this.fail(400, '地址ID不合法');
+            }
             await this.model('address').where({
                 id: addressId,
                 user_id: userId
             }).update(addressData);
         }
         // 如果设置为默认，则取消其它的默认
-        if (this.post('is_default') == 1) {
+        if (isDefault === 1) {
             await this.model('address').where({
                 id: ['<>', addressId],
                 user_id: userId
@@ -54,8 +85,11 @@ module.exports = class extends Base {
         return this.success(addressInfo);
     }
     async deleteAddressAction() {
-        const id = this.post('id');
-		const userId = this.getLoginUserId();;
+        const id = toPositiveInt(this.post('id'));
+		const userId = this.getLoginUserId();
+        if (!id) {
+            return this.fail(400, '地址ID不合法');
+        }
         let d = await this.model('address').where({
             user_id: userId,
             id: id
@@ -65,8 +99,11 @@ module.exports = class extends Base {
         return this.success(d);
     }
     async addressDetailAction() {
-        const addressId = this.get('id');
-		const userId = this.getLoginUserId();;
+        const addressId = toPositiveInt(this.get('id'));
+		const userId = this.getLoginUserId();
+        if (!addressId) {
+            return this.fail(400, '地址ID不合法');
+        }
         const addressInfo = await this.model('address').where({
             user_id: userId,
             id: addressId

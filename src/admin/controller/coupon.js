@@ -1,5 +1,5 @@
 const Base = require('./base.js');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 
 module.exports = class extends Base {
   now() {
@@ -550,11 +550,17 @@ module.exports = class extends Base {
     });
   }
 
-  sendExcel(filename, rows) {
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'records');
-    const buffer = XLSX.write(wb, {bookType: 'xlsx', type: 'buffer'});
+  async sendExcel(filename, rows) {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('records');
+    const headers = Array.isArray(rows) && rows.length ? Object.keys(rows[0]) : [];
+    if (headers.length) {
+      ws.columns = headers.map(key => ({header: key, key}));
+      rows.forEach((item) => {
+        ws.addRow(item || {});
+      });
+    }
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     this.ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     this.ctx.set('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
     this.ctx.body = buffer;
@@ -564,12 +570,12 @@ module.exports = class extends Base {
   async claimRecordExportAction() {
     const rows = await this.buildClaimRecordRowsForExport();
     const filename = `coupon_claim_record_${this.now()}.xlsx`;
-    return this.sendExcel(filename, rows);
+    return await this.sendExcel(filename, rows);
   }
 
   async useRecordExportAction() {
     const rows = await this.buildUseRecordRowsForExport();
     const filename = `coupon_use_record_${this.now()}.xlsx`;
-    return this.sendExcel(filename, rows);
+    return await this.sendExcel(filename, rows);
   }
 };
