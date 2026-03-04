@@ -14,6 +14,19 @@ module.exports = class extends Base {
         const goodsId = this.get('id');
 		const userId = this.getLoginUserId();;
         const model = this.model('goods');
+        const normalizePrice = (value, fallback = 0) => {
+            if (typeof value === 'number') {
+                return Number.isNaN(value) ? fallback : value;
+            }
+            const text = String(value || '').trim();
+            if (!text) return fallback;
+            if (text.includes('-')) {
+                const first = Number(text.split('-')[0]);
+                return Number.isNaN(first) ? fallback : first;
+            }
+            const num = Number(text);
+            return Number.isNaN(num) ? fallback : num;
+        };
         let info = await model.where({
             id: goodsId,
 			is_delete:0
@@ -35,6 +48,41 @@ module.exports = class extends Base {
         }
         let specificationList = await model.getSpecificationList(goodsId);
         info.goods_number = goodsNumber;
+        if (Number(userId) > 0) {
+            try {
+                const couponService = this.service('coupon', 'api');
+                const infoBasePrice = normalizePrice(info.min_retail_price, normalizePrice(info.retail_price, 0));
+                const decoratedInfoList = await couponService.decorateGoodsWithCouponPromo(userId, [{
+                    id: Number(info.id || goodsId),
+                    min_retail_price: infoBasePrice
+                }]);
+                if (Array.isArray(decoratedInfoList) && decoratedInfoList.length > 0) {
+                    const decoratedInfo = decoratedInfoList[0];
+                    info.has_coupon_promo = Number(decoratedInfo.has_coupon_promo || 0);
+                    info.promo_price = decoratedInfo.promo_price || infoBasePrice;
+                    info.original_price = decoratedInfo.original_price || infoBasePrice;
+                    info.promo_tag = decoratedInfo.promo_tag || '';
+                }
+                if (Array.isArray(productList) && productList.length > 0) {
+                    const productPriceList = productList.map(item => ({
+                        id: Number(info.id || goodsId),
+                        min_retail_price: Number(item.retail_price || 0)
+                    }));
+                    const decoratedProducts = await couponService.decorateGoodsWithCouponPromo(userId, productPriceList);
+                    productList = productList.map((item, index) => {
+                        const decorated = decoratedProducts[index] || {};
+                        return Object.assign({}, item, {
+                            has_coupon_promo: Number(decorated.has_coupon_promo || 0),
+                            promo_price: decorated.promo_price || item.retail_price,
+                            original_price: decorated.original_price || item.retail_price,
+                            promo_tag: decorated.promo_tag || ''
+                        });
+                    });
+                }
+            } catch (err) {
+                think.logger && think.logger.error && think.logger.error(`[goods.detail.couponDecorate] ${err.message || err}`);
+            }
+        }
         return this.success({
             info: info,
             gallery: gallery,
