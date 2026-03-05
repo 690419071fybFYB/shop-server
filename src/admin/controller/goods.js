@@ -3,7 +3,7 @@ const moment = require('moment');
 const fs = require('fs');
 const path = require("path");
 const htmlSanitizer = require('../../common/utils/sanitize_html');
-// const qiniu = require('qiniu'); // 已替换为阿里云OSS
+// const qiniu = require('qiniu'); // 已替换为腾讯云COS
 
 const IMPORT_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const IMPORT_ACCEPTED_MIME = [
@@ -1077,10 +1077,10 @@ module.exports = class extends Base {
             return this.fail(400, '图片地址不合法');
         }
         try {
-            const ossService = this.service('oss');
-            const ossUrl = await ossService.fetchAndUpload(remoteUrl);
+            const cosService = this.service('cos');
+            const cosUrl = await cosService.fetchAndUpload(remoteUrl);
             console.info(`[uploadHttpsImage] operator=${think.userId || 0} target=${remoteUrl} result=success`);
-            return this.success(ossUrl);
+            return this.success(cosUrl);
         } catch (error) {
             console.warn(`[uploadHttpsImage] operator=${think.userId || 0} target=${remoteUrl} result=failed reason=${error && error.message ? error.message : 'unknown'}`);
             console.error('上传HTTPS图片失败:', error);

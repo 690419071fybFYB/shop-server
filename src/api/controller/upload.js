@@ -1,6 +1,7 @@
 const Base = require("./base.js");
 const fs = require("fs");
 const path = require("path");
+const mime = require('mime-types');
 
 const MAX_AVATAR_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_AVATAR_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -51,7 +52,34 @@ function isSupportedImageHeader(buffer) {
   return isJpeg || isPng || isGif || isWebp;
 }
 
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function normalizeErrorMessage(error, fallback = 'unknown_error') {
+  if (!error) return fallback;
+  const message = String(error.message || error).trim();
+  return message || fallback;
+}
+
 module.exports = class extends Base {
+  async saveAvatarToLocal(file, mimeType) {
+    const extByMime = mimeType ? (mime.extension(mimeType) || '') : '';
+    const extByName = path.extname(file.name || file.originalFilename || '').replace('.', '').toLowerCase();
+    const safeExt = (extByMime || extByName || 'jpg').replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+    const fileName = `${think.uuid(32)}.${safeExt}`;
+    const dirPath = path.join(think.ROOT_PATH, 'www', 'static', 'upload', 'avatar');
+    ensureDir(dirPath);
+    const targetPath = path.join(dirPath, fileName);
+    await fs.promises.copyFile(file.path, targetPath);
+    return {
+      key: `static/upload/avatar/${fileName}`,
+      url: `/static/upload/avatar/${fileName}`
+    };
+  }
+
   async uploadAvatarAction() {
     const userId = this.getLoginUserId();
     if (userId <= 0) {
@@ -80,8 +108,19 @@ module.exports = class extends Base {
       return this.fail("头像文件格式不支持");
     }
     try {
-      const ossService = this.service('oss');
-      const uploaded = await ossService.uploadLocalFile(file.path, mimeType || 'image/jpeg', 'avatar');
+      let uploaded = null;
+      try {
+        const cosService = this.service('cos');
+        uploaded = await cosService.uploadLocalFile(file.path, mimeType || 'image/jpeg', 'avatar');
+      } catch (cosError) {
+        // COS异常时降级到本地存储，避免真机头像上传流程阻塞
+        const cosErrMsg = normalizeErrorMessage(cosError);
+        think.logger && think.logger.error && think.logger.error(`[uploadAvatar][cos] ${cosErrMsg}`);
+        if (cosError && cosError.stack) {
+          think.logger && think.logger.error && think.logger.error(cosError.stack);
+        }
+        uploaded = await this.saveAvatarToLocal(file, mimeType || 'image/jpeg');
+      }
       await this.model('user').where({ id: userId }).update({
         avatar: uploaded.url
       });
@@ -90,8 +129,10 @@ module.exports = class extends Base {
         fileUrl: uploaded.url,
       });
     } catch (error) {
+      const errMsg = normalizeErrorMessage(error);
       console.error('头像上传失败:', error);
-      return this.fail("头像上传失败");
+      // 向前端返回更具体的失败原因，避免只看到 errno=1000 难以排查
+      return this.fail(`头像上传失败: ${errMsg}`);
     } finally {
       if (file.path) {
         fs.unlink(file.path, () => {});

@@ -6,12 +6,52 @@ module.exports = class extends think.Controller {
 		const token = this.ctx.header['x-hioshop-token'] || '';
 		const tokenSerivce = think.service('token', 'api');
 		think.userId = tokenSerivce.getUserId(token);
-		const controller = String(this.ctx.controller || '').toLowerCase();
+
+		const normalizeName = (value) => {
+			const raw = String(value || '').toLowerCase();
+			const parts = raw.split('/');
+			return parts[parts.length - 1] || raw;
+		};
+
+		const controller = normalizeName(this.ctx.controller || '');
 		const action = String(this.ctx.action || '').toLowerCase();
-		const publicControllers = (think.config('publicController') || []).map((item) => String(item || '').toLowerCase());
-		const publicActions = (think.config('publicAction') || []).map((item) => String(item || '').toLowerCase());
-		const profileRequiredControllers = (think.config('profileRequiredController') || []).map((item) => String(item || '').toLowerCase());
-		const profileRequiredActions = (think.config('profileRequiredAction') || []).map((item) => String(item || '').toLowerCase());
+
+		const defaultPublicControllers = ['index', 'catalog', 'auth', 'goods', 'search', 'region'];
+		const defaultPublicActions = [
+			'cart/index',
+			'cart/add',
+			'cart/checked',
+			'cart/update',
+			'cart/delete',
+			'cart/goodscount',
+			'settings/showsettings',
+			'pay/notify'
+		];
+		const defaultProfileRequiredControllers = ['order', 'address', 'footprint'];
+		const defaultProfileRequiredActions = ['cart/checkout'];
+
+		const configPublicControllers = think.config('publicController');
+		const configPublicActions = think.config('publicAction');
+		const configProfileRequiredControllers = think.config('profileRequiredController');
+		const configProfileRequiredActions = think.config('profileRequiredAction');
+
+		const publicControllers = (Array.isArray(configPublicControllers) && configPublicControllers.length > 0
+			? configPublicControllers
+			: defaultPublicControllers
+		).map((item) => normalizeName(item));
+		const publicActions = (Array.isArray(configPublicActions) && configPublicActions.length > 0
+			? configPublicActions
+			: defaultPublicActions
+		).map((item) => String(item || '').toLowerCase());
+		const profileRequiredControllers = (Array.isArray(configProfileRequiredControllers) && configProfileRequiredControllers.length > 0
+			? configProfileRequiredControllers
+			: defaultProfileRequiredControllers
+		).map((item) => normalizeName(item));
+		const profileRequiredActions = (Array.isArray(configProfileRequiredActions) && configProfileRequiredActions.length > 0
+			? configProfileRequiredActions
+			: defaultProfileRequiredActions
+		).map((item) => String(item || '').toLowerCase());
+
 		const routeKey = `${controller}/${action}`;
 		const isPublic = publicControllers.includes(controller) || publicActions.includes(routeKey);
 		if (!isPublic && think.userId <= 0) {

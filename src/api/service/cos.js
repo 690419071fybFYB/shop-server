@@ -10,12 +10,12 @@ const urlUtil = require('url');
 module.exports = class extends think.Service {
   constructor() {
     super();
-    const ossConfig = think.config('oss') || {};
-    this.region = ossConfig.region;
-    this.bucket = ossConfig.bucket;
-    this.domain = (ossConfig.domain || '').replace(/\/+$/, '');
-    this.accessKeyId = String(ossConfig.accessKeyId || '');
-    this.accessKeySecret = String(ossConfig.accessKeySecret || '');
+    const cosConfig = think.config('cos') || {};
+    this.region = cosConfig.region;
+    this.bucket = cosConfig.bucket;
+    this.domain = (cosConfig.domain || '').replace(/\/+$/, '');
+    this.accessKeyId = String(cosConfig.accessKeyId || '');
+    this.accessKeySecret = String(cosConfig.accessKeySecret || '');
     this.client = new S3Client({
       region: this.region,
       endpoint: `https://cos.${this.region}.myqcloud.com`,
@@ -25,8 +25,8 @@ module.exports = class extends think.Service {
         secretAccessKey: this.accessKeySecret
       }
     });
-    this.maxFetchBytes = Number(ossConfig.maxFetchBytes || 10 * 1024 * 1024);
-    this.maxRedirects = Number(ossConfig.maxRedirects || 3);
+    this.maxFetchBytes = Number(cosConfig.maxFetchBytes || 10 * 1024 * 1024);
+    this.maxRedirects = Number(cosConfig.maxRedirects || 3);
   }
 
   ensureConfig() {
