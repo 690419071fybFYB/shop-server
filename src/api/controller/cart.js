@@ -616,33 +616,31 @@ module.exports = class extends Base {
             checkedAddress = 0;
         }
         // 计算订单的费用
-        let goodsTotalPrice = cartData.cartTotal.checkedGoodsAmount; // 商品总价
-        // 获取是否有可用红包
-        let money = cartData.cartTotal.checkedGoodsAmount;
-        let orderTotalPrice = 0;
-        let def = await this.model('settings').where({
-            id: 1
-        }).find();
-        orderTotalPrice = Number(money) + Number(freightPrice) // 订单的总价
-        const couponService = this.service('coupon', 'api');
-        const couponPreview = await couponService.previewCartCoupons({
+        const pricingService = this.service('pricing', 'api');
+        const pricingResult = await pricingService.resolveFinalPrice({
             userId: userId,
             cartItems: checkedGoodsList,
             selectedUserCouponIds: selectedUserCouponIds,
             freightPrice: Number(freightPrice || 0)
         });
+        const goodsTotalPrice = pricingResult.goodsTotalPrice || cartData.cartTotal.checkedGoodsAmount;
+        const orderTotalPrice = pricingResult.orderTotalPrice || (Number(cartData.cartTotal.checkedGoodsAmount || 0) + Number(freightPrice || 0)).toFixed(2);
         let numberChange = cartData.cartTotal.numberChange;
         return this.success({
             checkedAddress: checkedAddress,
             freightPrice: freightPrice,
             checkedGoodsList: checkedGoodsList,
             goodsTotalPrice: goodsTotalPrice,
-            orderTotalPrice: orderTotalPrice.toFixed(2),
-            actualPrice: couponPreview.actualPrice,
-            couponPrice: couponPreview.couponPrice,
-            couponCandidates: couponPreview.couponCandidates,
-            selectedCoupons: couponPreview.selectedCoupons,
-            invalidSelectedIds: couponPreview.invalidSelectedIds,
+            orderTotalPrice: orderTotalPrice,
+            actualPrice: pricingResult.actualPrice,
+            couponPrice: pricingResult.couponPrice,
+            promotionPrice: pricingResult.promotionPrice,
+            promotionDetail: pricingResult.selectedPromotions || [],
+            couponCandidates: pricingResult.couponCandidates || [],
+            selectedCoupons: pricingResult.selectedCoupons || [],
+            invalidSelectedIds: pricingResult.invalidSelectedIds || [],
+            appliedDiscountType: pricingResult.appliedDiscountType || 'none',
+            mutualExclusionReason: pricingResult.mutualExclusionReason || '',
             goodsCount: goodsCount,
             outStock: outStock,
             numberChange: numberChange,

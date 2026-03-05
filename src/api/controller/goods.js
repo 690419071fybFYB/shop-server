@@ -48,40 +48,44 @@ module.exports = class extends Base {
         }
         let specificationList = await model.getSpecificationList(goodsId);
         info.goods_number = goodsNumber;
-        if (Number(userId) > 0) {
-            try {
-                const couponService = this.service('coupon', 'api');
-                const infoBasePrice = normalizePrice(info.min_retail_price, normalizePrice(info.retail_price, 0));
-                const decoratedInfoList = await couponService.decorateGoodsWithCouponPromo(userId, [{
-                    id: Number(info.id || goodsId),
-                    min_retail_price: infoBasePrice
-                }]);
-                if (Array.isArray(decoratedInfoList) && decoratedInfoList.length > 0) {
-                    const decoratedInfo = decoratedInfoList[0];
-                    info.has_coupon_promo = Number(decoratedInfo.has_coupon_promo || 0);
-                    info.promo_price = decoratedInfo.promo_price || infoBasePrice;
-                    info.original_price = decoratedInfo.original_price || infoBasePrice;
-                    info.promo_tag = decoratedInfo.promo_tag || '';
-                }
-                if (Array.isArray(productList) && productList.length > 0) {
-                    const productPriceList = productList.map(item => ({
-                        id: Number(info.id || goodsId),
-                        min_retail_price: Number(item.retail_price || 0)
-                    }));
-                    const decoratedProducts = await couponService.decorateGoodsWithCouponPromo(userId, productPriceList);
-                    productList = productList.map((item, index) => {
-                        const decorated = decoratedProducts[index] || {};
-                        return Object.assign({}, item, {
-                            has_coupon_promo: Number(decorated.has_coupon_promo || 0),
-                            promo_price: decorated.promo_price || item.retail_price,
-                            original_price: decorated.original_price || item.retail_price,
-                            promo_tag: decorated.promo_tag || ''
-                        });
-                    });
-                }
-            } catch (err) {
-                think.logger && think.logger.error && think.logger.error(`[goods.detail.couponDecorate] ${err.message || err}`);
+        try {
+            const promotionService = this.service('promotion', 'api');
+            const infoBasePrice = normalizePrice(info.min_retail_price, normalizePrice(info.retail_price, 0));
+            const decoratedInfoList = await promotionService.decorateGoodsWithPromotion(userId, [{
+                id: Number(info.id || goodsId),
+                min_retail_price: infoBasePrice
+            }]);
+            if (Array.isArray(decoratedInfoList) && decoratedInfoList.length > 0) {
+                const decoratedInfo = decoratedInfoList[0];
+                info.has_promo = Number(decoratedInfo.has_promo || 0);
+                info.promo_source = decoratedInfo.promo_source || 'none';
+                info.promo_type = decoratedInfo.promo_type || '';
+                info.promo_price = decoratedInfo.promo_price || infoBasePrice;
+                info.original_price = decoratedInfo.original_price || infoBasePrice;
+                info.promo_tag = decoratedInfo.promo_tag || '';
+                info.promo_end_at = Number(decoratedInfo.promo_end_at || 0);
+                info.promo_countdown_seconds = Number(decoratedInfo.promo_countdown_seconds || 0);
+                info.promo_stock_percent = Number(decoratedInfo.promo_stock_percent || 0);
+                info.has_coupon_promo = Number(decoratedInfo.has_coupon_promo || 0);
             }
+            if (Array.isArray(productList) && productList.length > 0) {
+                productList = await promotionService.decorateSkuListWithPromotion(userId, Number(goodsId), productList);
+            }
+        } catch (err) {
+            think.logger && think.logger.error && think.logger.error(`[goods.detail.promotionDecorate] ${err.message || err}`);
+        }
+        if (!('has_promo' in info)) {
+            const fallbackPrice = normalizePrice(info.min_retail_price, normalizePrice(info.retail_price, 0));
+            info.has_promo = 0;
+            info.promo_source = 'none';
+            info.promo_type = '';
+            info.promo_price = fallbackPrice;
+            info.original_price = fallbackPrice;
+            info.promo_tag = '';
+            info.promo_end_at = 0;
+            info.promo_countdown_seconds = 0;
+            info.promo_stock_percent = 0;
+            info.has_coupon_promo = 0;
         }
         return this.success({
             info: info,
@@ -141,7 +145,14 @@ module.exports = class extends Base {
             };
         }
         const goodsData = await model.where(whereMap).order(orderMap).select();
-        return this.success(goodsData);
+        try {
+            const promotionService = this.service('promotion', 'api');
+            const decorated = await promotionService.decorateGoodsWithPromotion(userId, goodsData);
+            return this.success(decorated);
+        } catch (err) {
+            think.logger && think.logger.error && think.logger.error(`[goods.list.promotionDecorate] ${err.message || err}`);
+            return this.success(goodsData);
+        }
     }
     /**
      * 在售的商品总数

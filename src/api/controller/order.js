@@ -151,8 +151,7 @@ module.exports = class extends Base {
         }
         // 订单支付倒计时
         if (orderInfo.order_status === 101 || orderInfo.order_status === 801) {
-            // if (moment().subtract(60, 'minutes') < moment(orderInfo.add_time)) {
-            orderInfo.final_pay_time = orderInfo.add_time + 24 * 60 * 60; //支付倒计时2小时
+            orderInfo.final_pay_time = Number(orderInfo.pay_expire_at || 0) > 0 ? Number(orderInfo.pay_expire_at) : (orderInfo.add_time + 24 * 60 * 60);
             if (orderInfo.final_pay_time < currentTime) {
                 //超过时间不支付，更新订单状态为取消
                 let updateInfo = {
@@ -162,7 +161,13 @@ module.exports = class extends Base {
                     id: orderId
                 }).update(updateInfo);
                 const couponService = this.service('coupon', 'api');
+                const promotionService = this.service('promotion', 'api');
                 await couponService.releaseLockedCoupons(orderId);
+                try {
+                    await promotionService.releaseSeckillLocks(orderId);
+                } catch (err) {
+                    think.logger && think.logger.warn && think.logger.warn(`[order.detail.releaseSeckillLocks] ${err.message || err}`);
+                }
             }
         }
         orderInfo.add_time = moment.unix(orderInfo.add_time).format('YYYY-MM-DD HH:mm:ss');
@@ -254,7 +259,13 @@ module.exports = class extends Base {
             return this.fail(404, '订单不存在');
         }
         const couponService = this.service('coupon', 'api');
+        const promotionService = this.service('promotion', 'api');
         await couponService.releaseLockedCoupons(orderId);
+        try {
+            await promotionService.releaseSeckillLocks(orderId);
+        } catch (err) {
+            think.logger && think.logger.warn && think.logger.warn(`[order.cancel.releaseSeckillLocks] ${err.message || err}`);
+        }
         return this.success(succesInfo);
     }
     /**
@@ -385,28 +396,31 @@ module.exports = class extends Base {
         if(checkPrice > 0){
             return this.fail(400, '价格发生变化，请重新下单');
         }
-        // 统计商品总价
-        let goodsTotalPrice = 0.00;
+        // 原价商品总价（不含优惠）
+        let originalGoodsTotalPrice = 0.00;
         for (const cartItem of checkedGoodsList) {
-            goodsTotalPrice += cartItem.number * cartItem.retail_price;
+            originalGoodsTotalPrice += cartItem.number * cartItem.retail_price;
         }
 
-        const couponService = this.service('coupon', 'api');
-        const couponPreview = await couponService.previewCartCoupons({
+        const pricingService = this.service('pricing', 'api');
+        const pricingResult = await pricingService.resolveFinalPrice({
             userId: userId,
             cartItems: checkedGoodsList,
             selectedUserCouponIds: selectedUserCouponIds,
             freightPrice: freightPrice
         });
-        if (selectedUserCouponIds.length > 0 && (couponPreview.invalidSelectedIds || []).length > 0) {
+        if (selectedUserCouponIds.length > 0 && (pricingResult.invalidSelectedIds || []).length > 0) {
             return this.fail(400, '优惠券不可用，请重新选择');
         }
 
         // 订单价格计算
-        const orderTotalPrice = goodsTotalPrice + freightPrice; // 订单的总价
-        const couponPrice = Number(couponPreview.couponPrice || 0);
-        const actualPrice = Math.max(0, Number(couponPreview.actualPrice || orderTotalPrice)); // 减去其它支付的金额后，要实际支付的金额 比如满减等优惠
+        const orderTotalPrice = originalGoodsTotalPrice + freightPrice; // 订单总价（不含优惠）
+        const appliedDiscountType = String(pricingResult.appliedDiscountType || 'none');
+        const couponPrice = appliedDiscountType === 'coupon' ? Number(pricingResult.couponPrice || 0) : 0;
+        const promotionPrice = appliedDiscountType === 'promotion' ? Number(pricingResult.promotionPrice || 0) : 0;
+        const actualPrice = Math.max(0, Number(pricingResult.actualPrice || orderTotalPrice));
         const currentTime = parseInt(new Date().getTime() / 1000);
+        const payExpireAt = Number(pricingResult.hasSeckill || 0) === 1 ? currentTime + 15 * 60 : currentTime + 24 * 60 * 60;
         let print_info = '';
         for (const item in checkedGoodsList) {
             let i = Number(item) + 1;
@@ -426,64 +440,92 @@ module.exports = class extends Base {
             order_status: 101, // 订单初始状态为 101
             // 根据城市得到运费，这里需要建立表：所在城市的具体运费
             freight_price: freightPrice,
+            pay_expire_at: payExpireAt,
             postscript: buffer.toString('base64'),
             add_time: currentTime,
-            goods_price: goodsTotalPrice,
+            goods_price: originalGoodsTotalPrice,
             order_price: orderTotalPrice,
             actual_price: actualPrice,
             change_price: actualPrice,
             coupon_price: couponPrice,
-            promotions_price: couponPrice,
-            coupon_detail_json: JSON.stringify(couponPreview.selectedCoupons || []),
+            promotions_price: promotionPrice,
+            coupon_detail_json: JSON.stringify(appliedDiscountType === 'coupon' ? (pricingResult.selectedCoupons || []) : []),
+            promotion_detail_json: JSON.stringify(appliedDiscountType === 'promotion' ? (pricingResult.selectedPromotions || []) : []),
             print_info: print_info,
-            offline_pay:offlinePay
+            offline_pay:offlinePay,
+            order_type: Number(pricingResult.hasSeckill || 0) === 1 ? 1 : 0
         };
         // 开启事务，插入订单信息和订单商品
         const transactionModel = this.model('order');
-        await transactionModel.transaction(async () => {
-            const bindModel = (name) => {
-                const model = transactionModel.model(name);
-                model.db(transactionModel.db());
-                return model;
-            };
-            const orderModel = bindModel('order');
-            const orderGoodsModel = bindModel('order_goods');
-            const orderId = await orderModel.add(orderInfo);
-            orderInfo.id = orderId;
-            if (!orderId) {
-                throw new Error('订单提交失败');
-            }
-            // 将商品信息录入数据库
-            const orderGoodsData = [];
-            for (const goodsItem of checkedGoodsList) {
-                orderGoodsData.push({
-                    user_id: userId,
-                    order_id: orderId,
-                    goods_id: goodsItem.goods_id,
-                    product_id: goodsItem.product_id,
-                    goods_name: goodsItem.goods_name,
-                    goods_aka: goodsItem.goods_aka,
-                    list_pic_url: goodsItem.list_pic_url,
-                    retail_price: goodsItem.retail_price,
-                    number: goodsItem.number,
-                    goods_specifition_name_value: goodsItem.goods_specifition_name_value,
-                    goods_specifition_ids: goodsItem.goods_specifition_ids
-                });
-            }
-            await orderGoodsModel.addMany(orderGoodsData);
-            if ((couponPreview.selectedCoupons || []).length > 0) {
-                await couponService.lockOrConsumeCouponsForOrder({
-                    userId: userId,
-                    orderId: orderId,
-                    selectedCoupons: couponPreview.selectedCoupons,
-                    consumeDirect: offlinePay === 1,
-                    transactionModel
-                });
-            }
-        });
+        try {
+            await transactionModel.transaction(async () => {
+                const couponService = this.service('coupon', 'api');
+                const promotionService = this.service('promotion', 'api');
+                const bindModel = (name) => {
+                    const model = transactionModel.model(name);
+                    model.db(transactionModel.db());
+                    return model;
+                };
+                const orderModel = bindModel('order');
+                const orderGoodsModel = bindModel('order_goods');
+                const orderId = await orderModel.add(orderInfo);
+                orderInfo.id = orderId;
+                if (!orderId) {
+                    throw new Error('订单提交失败');
+                }
+                // 将商品信息录入数据库
+                const orderGoodsData = [];
+                for (const goodsItem of checkedGoodsList) {
+                    orderGoodsData.push({
+                        user_id: userId,
+                        order_id: orderId,
+                        goods_id: goodsItem.goods_id,
+                        product_id: goodsItem.product_id,
+                        goods_name: goodsItem.goods_name,
+                        goods_aka: goodsItem.goods_aka,
+                        list_pic_url: goodsItem.list_pic_url,
+                        retail_price: goodsItem.retail_price,
+                        number: goodsItem.number,
+                        goods_specifition_name_value: goodsItem.goods_specifition_name_value,
+                        goods_specifition_ids: goodsItem.goods_specifition_ids
+                    });
+                }
+                await orderGoodsModel.addMany(orderGoodsData);
+                if (appliedDiscountType === 'coupon' && (pricingResult.selectedCoupons || []).length > 0) {
+                    await couponService.lockOrConsumeCouponsForOrder({
+                        userId: userId,
+                        orderId: orderId,
+                        selectedCoupons: pricingResult.selectedCoupons,
+                        consumeDirect: offlinePay === 1,
+                        transactionModel
+                    });
+                }
+                if (appliedDiscountType === 'promotion') {
+                    if ((pricingResult.seckillItems || []).length > 0) {
+                        await promotionService.lockSeckillStockForOrder({
+                            orderId: orderId,
+                            userId: userId,
+                            seckillItems: pricingResult.seckillItems,
+                            expireAt: payExpireAt,
+                            transactionModel
+                        });
+                    }
+                    if ((pricingResult.selectedPromotions || []).length > 0) {
+                        await promotionService.saveOrderPromotionSnapshot({
+                            orderId: orderId,
+                            selectedPromotions: pricingResult.selectedPromotions,
+                            transactionModel
+                        });
+                    }
+                }
+            });
+        } catch (err) {
+            return this.fail(400, err.message || '订单提交失败');
+        }
         await this.model('cart').clearBuyGoods();
         return this.success({
-            orderInfo: orderInfo
+            orderInfo: orderInfo,
+            pricingDecision: pricingResult.pricingDecision || {}
         });
     }
     async updateAction() {

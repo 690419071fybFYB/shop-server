@@ -9,6 +9,7 @@
     "lint-fix": "eslint --fix src/",
     "test:goods-import": "node scripts/test-goods-import.js",
     "test:coupon": "node scripts/test-coupon.js",
+    "test:promotion-v1": "node scripts/test-promotion-v1.js",
     "test:cos-smoke": "node scripts/test-cos-smoke.js"
   },
   "dependencies": {

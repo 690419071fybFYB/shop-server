@@ -10,6 +10,11 @@ const IMPORT_ACCEPTED_MIME = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/octet-stream'
 ];
+const GOODS_SCHEMA_CACHE_MS = 60000;
+const goodsSchemaState = {
+    checkedAt: 0,
+    hasAddTime: false
+};
 
 function readFileHeader(filePath, length = 8) {
     try {
@@ -39,6 +44,175 @@ function isZipFileHeader(buffer) {
 }
 
 module.exports = class extends Base {
+    async hasGoodsAddTimeColumn() {
+        const nowMs = Date.now();
+        if ((nowMs - goodsSchemaState.checkedAt) < GOODS_SCHEMA_CACHE_MS) {
+            return goodsSchemaState.hasAddTime;
+        }
+        try {
+            const rows = await this.model('goods').query("SHOW COLUMNS FROM `hiolabs_goods` LIKE 'add_time'");
+            goodsSchemaState.hasAddTime = Array.isArray(rows) && rows.length > 0;
+        } catch (err) {
+            goodsSchemaState.hasAddTime = false;
+        }
+        goodsSchemaState.checkedAt = nowMs;
+        return goodsSchemaState.hasAddTime;
+    }
+
+    normalizeNumber(value, fallback = 0) {
+        const num = Number(value);
+        return Number.isNaN(num) ? fallback : num;
+    }
+
+    parseOptionalPrice(value) {
+        if (value === undefined || value === null || value === '') {
+            return null;
+        }
+        const num = Number(value);
+        if (Number.isNaN(num) || num < 0) {
+            return null;
+        }
+        return num;
+    }
+
+    async normalizePickerSort(sortBy, sortOrder) {
+        const hasAddTime = await this.hasGoodsAddTimeColumn();
+        const map = {
+            sell_volume: 'g.sell_volume',
+            min_retail_price: 'g.min_retail_price',
+            goods_number: 'g.goods_number',
+            // Prefer true create-time ordering when available.
+            add_time: hasAddTime ? 'g.add_time' : 'g.id'
+        };
+        const by = String(sortBy || 'add_time').trim();
+        const column = map[by] || map.add_time;
+        const order = String(sortOrder || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        return {
+            column,
+            order
+        };
+    }
+
+    parseOptionalOnSale(value) {
+        if (value === undefined || value === null || value === '') {
+            return null;
+        }
+        if (typeof value === 'boolean') {
+            return value ? 1 : 0;
+        }
+        const text = String(value).toLowerCase();
+        if (['1', 'true', 'yes', 'on'].includes(text)) return 1;
+        if (['0', 'false', 'no', 'off'].includes(text)) return 0;
+        return null;
+    }
+
+    escapeLike(value) {
+        return String(value || '')
+            .replace(/\\/g, '\\\\')
+            .replace(/%/g, '\\%')
+            .replace(/_/g, '\\_')
+            .replace(/'/g, "''");
+    }
+
+    async pickerListAction() {
+        const page = Math.max(1, parseInt(this.get('page') || 1, 10));
+        const size = Math.min(100, Math.max(1, parseInt(this.get('size') || 10, 10)));
+        const offset = (page - 1) * size;
+        const keyword = String(this.get('keyword') || '').trim();
+        const categoryId = parseInt(this.get('categoryId') || 0, 10);
+        const minPrice = this.parseOptionalPrice(this.get('minPrice'));
+        const maxPrice = this.parseOptionalPrice(this.get('maxPrice'));
+        const isOnSale = this.parseOptionalOnSale(this.get('isOnSale'));
+        const {column: sortColumn, order: sortOrder} = await this.normalizePickerSort(this.get('sortBy'), this.get('sortOrder'));
+
+        const where = ['g.is_delete = 0'];
+        if (keyword) {
+            where.push(`g.name LIKE '%${this.escapeLike(keyword)}%' ESCAPE '\\\\'`);
+        }
+
+        if (categoryId > 0) {
+            const categoryRows = await this.model('category').where({
+                id: ['=', categoryId]
+            }).select();
+            if (categoryRows.length > 0) {
+                const childRows = await this.model('category').where({
+                    parent_id: categoryId
+                }).select();
+                const ids = [categoryId].concat(childRows.map(item => Number(item.id || 0)).filter(id => id > 0));
+                where.push(`g.category_id IN (${Array.from(new Set(ids)).join(',')})`);
+            } else {
+                where.push('1=0');
+            }
+        }
+        if (minPrice !== null) {
+            where.push(`g.min_retail_price >= ${Number(minPrice)}`);
+        }
+        if (maxPrice !== null) {
+            where.push(`g.min_retail_price <= ${Number(maxPrice)}`);
+        }
+        if (isOnSale !== null) {
+            where.push(`g.is_on_sale = ${isOnSale}`);
+        }
+
+        const whereSql = where.join(' AND ');
+        const countSql = `SELECT COUNT(1) AS total FROM hiolabs_goods g WHERE ${whereSql}`;
+        const listSql = `
+            SELECT
+                g.id,
+                g.name,
+                g.list_pic_url,
+                g.category_id,
+                c.name AS category_name,
+                g.min_retail_price,
+                g.goods_number,
+                g.sell_volume,
+                g.is_on_sale,
+                g.id AS add_time
+            FROM hiolabs_goods g
+            LEFT JOIN hiolabs_category c ON g.category_id = c.id
+            WHERE ${whereSql}
+            ORDER BY ${sortColumn} ${sortOrder}, g.id DESC
+            LIMIT ${offset}, ${size}
+        `;
+        const [countRows, listRows] = await Promise.all([
+            this.model('goods').query(countSql),
+            this.model('goods').query(listSql)
+        ]);
+        const total = Number((countRows[0] && countRows[0].total) || 0);
+        return this.success({
+            count: total,
+            currentPage: page,
+            totalPages: Math.ceil(total / size),
+            data: listRows || []
+        });
+    }
+
+    async pickerSkuAction() {
+        const goodsId = parseInt(this.get('goodsId') || 0, 10);
+        if (goodsId <= 0) {
+            return this.fail(400, 'goodsId 参数不正确');
+        }
+        const sql = `
+            SELECT
+                p.id AS product_id,
+                p.goods_id,
+                p.goods_sn,
+                COALESCE(g.name, p.goods_name, '') AS goods_name,
+                p.retail_price,
+                p.goods_number,
+                p.is_on_sale,
+                COALESCE(gs.value, '') AS spec_value
+            FROM hiolabs_product p
+            LEFT JOIN hiolabs_goods g ON p.goods_id = g.id
+            LEFT JOIN hiolabs_goods_specification gs ON p.goods_specification_ids = gs.id AND gs.is_delete = 0
+            WHERE p.goods_id = ${Number(goodsId)}
+              AND p.is_delete = 0
+            ORDER BY p.id ASC
+        `;
+        const rows = await this.model('product').query(sql);
+        return this.success(rows || []);
+    }
+
     /**
      * index action
      * @return {Promise} []

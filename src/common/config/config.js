@@ -4,6 +4,7 @@ const cosBucket = process.env.COS_BUCKET || 'fybshopbk-1369967353';
 const cosDomain =
   process.env.COS_DOMAIN ||
   `https://${cosBucket}.cos.${cosRegion}.myqcloud.com`;
+const promotionFeatureFlag = String(process.env.FEATURE_PROMOTION_V1 || 'true').toLowerCase();
 
 module.exports = {
     default_module: 'api',
@@ -15,6 +16,9 @@ module.exports = {
         adminTokenExpiresIn: process.env.ADMIN_TOKEN_EXPIRES_IN || '12h',
         adminPasswordHashRounds: Number(process.env.ADMIN_PASSWORD_HASH_ROUNDS || 10),
         tokenAlgorithm: 'HS256'
+    },
+    features: {
+        promotionV1: !['0', 'false', 'off', 'no'].includes(promotionFeatureFlag)
     },
     weixin: {
         appid: process.env.WEIXIN_APPID || '', // 小程序 appid

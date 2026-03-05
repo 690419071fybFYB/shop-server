@@ -51,6 +51,11 @@ module.exports = class extends Base {
         if (parseInt(orderInfo.pay_status) !== 0) {
             return this.fail(400, '订单已支付，请不要重复操作');
         }
+        const nowTs = parseInt(Date.now() / 1000, 10);
+        const payExpireAt = Number(orderInfo.pay_expire_at || 0);
+        if (payExpireAt > 0 && nowTs > payExpireAt) {
+            return this.fail(400, '订单已超时关闭，请重新下单');
+        }
         const openid = await this.model('user').where({
             id: orderInfo.user_id
         }).getField('weixin_openid', true);
@@ -88,10 +93,16 @@ module.exports = class extends Base {
         }
         let bool = await orderModel.checkPayStatus(orderInfo.id);
         if (bool == true) {
-            if (orderInfo.order_type == 0) { //普通订单和秒杀订单
+            if (orderInfo.order_type == 0 || orderInfo.order_type == 1) { //普通订单和秒杀订单
                 await orderModel.updatePayData(orderInfo.id, result);
                 const couponService = this.service('coupon', 'api');
+                const promotionService = this.service('promotion', 'api');
                 await couponService.consumeCouponsForOrder(orderInfo.id);
+                try {
+                    await promotionService.consumeSeckillLocks(orderInfo.id);
+                } catch (err) {
+                    think.logger && think.logger.warn && think.logger.warn(`[pay.notify.consumeSeckillLocks] ${err.message || err}`);
+                }
                 this.afterPay(orderInfo);
             } 
         } else {
@@ -101,7 +112,7 @@ module.exports = class extends Base {
         return this.json(echo);
     }
     async afterPay(orderInfo) {
-        if (orderInfo.order_type == 0) {
+        if (orderInfo.order_type == 0 || orderInfo.order_type == 1) {
             let orderGoodsList = await this.model('order_goods').where({
                 order_id: orderInfo.id
             }).select();

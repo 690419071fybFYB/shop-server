@@ -47,13 +47,11 @@ module.exports = class extends Base {
         }).field('name,id,goods_brief,min_retail_price,list_pic_url,goods_number').page(page, size).countSelect();
         if (Array.isArray(list.data) && list.data.length > 0) {
             const userId = this.getLoginUserId();
-            if (Number(userId) > 0) {
-                try {
-                    const couponService = this.service('coupon', 'api');
-                    list.data = await couponService.decorateGoodsWithCouponPromo(userId, list.data);
-                } catch (err) {
-                    think.logger && think.logger.error && think.logger.error(`[catalog.currentlist.decorateGoodsWithCouponPromo] ${err.message || err}`);
-                }
+            try {
+                const promotionService = this.service('promotion', 'api');
+                list.data = await promotionService.decorateGoodsWithPromotion(userId, list.data);
+            } catch (err) {
+                think.logger && think.logger.error && think.logger.error(`[catalog.currentlist.decorateGoodsWithPromotion] ${err.message || err}`);
             }
         }
         return this.success(list);

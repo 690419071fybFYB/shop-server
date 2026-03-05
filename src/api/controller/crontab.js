@@ -25,14 +25,11 @@ module.exports = class extends Base {
             }
         }
         const expiretime = parseInt(new Date().getTime() / 1000) - 24 * 60 * 60;
-        let orderList = await this.model('order').where({
-            order_status: ['IN', '101,801'],
-            add_time: ['<', expiretime],
-            is_delete: 0,
-        }).select();
+        const orderList = await this.model('order').where(`order_status IN (101,801) AND is_delete = 0 AND ((pay_expire_at > 0 AND pay_expire_at < ${currentTime}) OR (pay_expire_at = 0 AND add_time < ${expiretime}))`).select();
         if (orderList.length != 0) {
             // await this.model('order').where({id: ['IN', orderList.map((ele) => ele.id)]}).update({order_status: 102});
             const couponService = this.service('coupon', 'api');
+            const promotionService = this.service('promotion', 'api');
             for (const item of orderList) {
 
                 let orderId = item.id;
@@ -42,6 +39,11 @@ module.exports = class extends Base {
                     order_status: 102
                 });
                 await couponService.releaseLockedCoupons(orderId);
+                try {
+                    await promotionService.releaseSeckillLocks(orderId);
+                } catch (err) {
+                    think.logger && think.logger.warn && think.logger.warn(`[crontab.releaseSeckillLocks] ${err.message || err}`);
+                }
             }
         }
         // 定时将到期的广告停掉
@@ -80,6 +82,12 @@ module.exports = class extends Base {
         }
         const couponService = this.service('coupon', 'api');
         await couponService.expireCouponsBatch();
+        const promotionService = this.service('promotion', 'api');
+        try {
+            await promotionService.releaseExpiredSeckillLocksBatch(currentTime);
+        } catch (err) {
+            think.logger && think.logger.warn && think.logger.warn(`[crontab.releaseExpiredSeckillLocksBatch] ${err.message || err}`);
+        }
     }
     async resetSqlAction() {
         let time = parseInt(new Date().getTime() / 1000 + 300);

@@ -38,9 +38,9 @@ module.exports = class extends Base {
 			categoryItem.goodsList = categoryGoods;
 		}
 		const userId = this.getLoginUserId();
-		if (Number(userId) > 0 && Array.isArray(categoryList) && categoryList.length > 0) {
+		if (Array.isArray(categoryList) && categoryList.length > 0) {
 			try {
-				const couponService = this.service('coupon', 'api');
+				const promotionService = this.service('promotion', 'api');
 				const flatGoodsList = [];
 				categoryList.forEach((item) => {
 					(item.goodsList || []).forEach((goods) => {
@@ -49,13 +49,13 @@ module.exports = class extends Base {
 						}
 					});
 				});
-				const decoratedGoods = await couponService.decorateGoodsWithCouponPromo(userId, flatGoodsList);
+				const decoratedGoods = await promotionService.decorateGoodsWithPromotion(userId, flatGoodsList);
 				const goodsMap = new Map(decoratedGoods.map(item => [Number(item.id), item]));
 				categoryList.forEach((item) => {
 					item.goodsList = (item.goodsList || []).map(goods => goodsMap.get(Number(goods.id)) || goods);
 				});
 			} catch (err) {
-				think.logger && think.logger.error && think.logger.error(`[index.appInfo.decorateGoodsWithCouponPromo] ${err.message || err}`);
+				think.logger && think.logger.error && think.logger.error(`[index.appInfo.decorateGoodsWithPromotion] ${err.message || err}`);
 			}
 		}
 		let cartCount = await this.model('cart').where({
