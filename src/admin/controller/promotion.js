@@ -5,6 +5,22 @@ module.exports = class extends Base {
     return parseInt(Date.now() / 1000, 10);
   }
 
+  generatePromotionKey() {
+    return `PR${Date.now()}${Math.floor(Math.random() * 10000)}`;
+  }
+
+  async hasPromotionKeyColumn(txModel) {
+    const rows = await txModel.query(`
+      SELECT COUNT(*) AS cnt
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'hiolabs_promotion'
+        AND COLUMN_NAME = 'promotion_key'
+      LIMIT 1
+    `);
+    return Number(rows && rows[0] && rows[0].cnt || 0) > 0;
+  }
+
   parseIds(value) {
     if (Array.isArray(value)) {
       return Array.from(new Set(value.map(item => Number(item)).filter(item => item > 0)));
@@ -195,13 +211,18 @@ module.exports = class extends Base {
       await txModel.transaction(async () => {
         const promotionModel = txModel.model('promotion');
         promotionModel.db(txModel.db());
+        const usePromotionKey = await this.hasPromotionKeyColumn(txModel);
         const {goodsIds, ...promotionData} = parsed.payload;
-        promotionId = await promotionModel.add({
+        const insertData = {
           ...promotionData,
           is_delete: 0,
           add_time: nowTs,
           update_time: nowTs
-        });
+        };
+        if (usePromotionKey) {
+          insertData.promotion_key = this.generatePromotionKey();
+        }
+        promotionId = await promotionModel.add(insertData);
         await this.syncPromotionGoods(promotionId, goodsIds, txModel);
       });
       return this.success({id: Number(promotionId)});

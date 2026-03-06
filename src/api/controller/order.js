@@ -385,16 +385,24 @@ module.exports = class extends Base {
         if(checkPrice > 0){
             return this.fail(400, '价格发生变化，请重新下单');
         }
-        // 统计商品总价
-        let goodsTotalPrice = 0.00;
-        for (const cartItem of checkedGoodsList) {
-            goodsTotalPrice += cartItem.number * cartItem.retail_price;
+        const promotionService = this.service('promotion', 'api');
+        let pricedGoodsList = checkedGoodsList;
+        try {
+            pricedGoodsList = await promotionService.decorateCartItemsWithPromotion(checkedGoodsList);
+        } catch (err) {
+            think.logger && think.logger.error && think.logger.error(`[order.submit.promotionDecorate] ${err.message || err}`);
         }
+        const pricedSummary = promotionService.summarizeCartItems(pricedGoodsList);
+        const goodsTotalPrice = Number(pricedSummary.goodsTotalNumber || 0);
+        const promotionPrice = Number(pricedSummary.promotionNumber || 0);
 
         const couponService = this.service('coupon', 'api');
+        const couponCartItems = pricedGoodsList.map(item => Object.assign({}, item, {
+            retail_price: item.display_price || item.promotion_price || item.retail_price
+        }));
         const couponPreview = await couponService.previewCartCoupons({
             userId: userId,
-            cartItems: checkedGoodsList,
+            cartItems: couponCartItems,
             selectedUserCouponIds: selectedUserCouponIds,
             freightPrice: freightPrice
         });
@@ -405,12 +413,13 @@ module.exports = class extends Base {
         // 订单价格计算
         const orderTotalPrice = goodsTotalPrice + freightPrice; // 订单的总价
         const couponPrice = Number(couponPreview.couponPrice || 0);
+        const totalPromotionPrice = Math.max(0, promotionPrice + couponPrice);
         const actualPrice = Math.max(0, Number(couponPreview.actualPrice || orderTotalPrice)); // 减去其它支付的金额后，要实际支付的金额 比如满减等优惠
         const currentTime = parseInt(new Date().getTime() / 1000);
         let print_info = '';
-        for (const item in checkedGoodsList) {
+        for (const item in pricedGoodsList) {
             let i = Number(item) + 1;
-            print_info = print_info + i + '、' + checkedGoodsList[item].goods_aka + '【' + checkedGoodsList[item].number + '】 ';
+            print_info = print_info + i + '、' + pricedGoodsList[item].goods_aka + '【' + pricedGoodsList[item].number + '】 ';
         }
 
         const orderInfo = {
@@ -433,7 +442,7 @@ module.exports = class extends Base {
             actual_price: actualPrice,
             change_price: actualPrice,
             coupon_price: couponPrice,
-            promotions_price: couponPrice,
+            promotions_price: Number(totalPromotionPrice.toFixed(2)),
             coupon_detail_json: JSON.stringify(couponPreview.selectedCoupons || []),
             print_info: print_info,
             offline_pay:offlinePay
@@ -455,7 +464,8 @@ module.exports = class extends Base {
             }
             // 将商品信息录入数据库
             const orderGoodsData = [];
-            for (const goodsItem of checkedGoodsList) {
+            for (const goodsItem of pricedGoodsList) {
+                const dealUnitPrice = Number(goodsItem.display_price || goodsItem.promotion_price || goodsItem.retail_price || 0);
                 orderGoodsData.push({
                     user_id: userId,
                     order_id: orderId,
@@ -464,7 +474,7 @@ module.exports = class extends Base {
                     goods_name: goodsItem.goods_name,
                     goods_aka: goodsItem.goods_aka,
                     list_pic_url: goodsItem.list_pic_url,
-                    retail_price: goodsItem.retail_price,
+                    retail_price: Number(dealUnitPrice.toFixed(2)),
                     number: goodsItem.number,
                     goods_specifition_name_value: goodsItem.goods_specifition_name_value,
                     goods_specifition_ids: goodsItem.goods_specifition_ids

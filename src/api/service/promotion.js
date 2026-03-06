@@ -151,7 +151,7 @@ module.exports = class extends think.Service {
   }
 
   decorateOne(goods, promotions, promotionGoodsMap, nowTs) {
-    const goodsId = Number(goods && (goods.id || goods.goods_id) || 0);
+    const goodsId = Number(goods && (goods.goods_id || goods.id) || 0);
     const basePrice = this.normalizePrice(
       goods && (goods.min_retail_price !== undefined ? goods.min_retail_price : goods.retail_price),
       this.normalizePrice(goods && goods.retail_price, 0)
@@ -219,9 +219,101 @@ module.exports = class extends think.Service {
         return this.buildDefaultDecoration(goods, basePrice);
       });
     }
-    const goodsIds = Array.from(new Set(goodsList.map(item => Number(item && (item.id || item.goods_id) || 0)).filter(id => id > 0)));
+    const goodsIds = Array.from(new Set(goodsList.map(item => Number(item && (item.goods_id || item.id) || 0)).filter(id => id > 0)));
     const promotionIds = promotions.map(item => Number(item.id || 0)).filter(id => id > 0);
     const promotionGoodsMap = await this.getPromotionGoodsMap(promotionIds, goodsIds);
     return goodsList.map(goods => this.decorateOne(goods, promotions, promotionGoodsMap, nowTs));
+  }
+
+  async decorateCartItemsWithPromotion(cartItems, options = {}) {
+    const list = Array.isArray(cartItems) ? cartItems : [];
+    if (!list.length) {
+      return [];
+    }
+    const nowTs = Number(options.nowTs || this.now());
+    const promotions = await this.getActivePromotions(nowTs);
+    let promotionGoodsMap = new Map();
+    if (promotions.length) {
+      const goodsIds = Array.from(new Set(
+        list
+          .map(item => Number(item && (item.goods_id || item.id) || 0))
+          .filter(id => id > 0)
+      ));
+      const promotionIds = promotions.map(item => Number(item.id || 0)).filter(id => id > 0);
+      promotionGoodsMap = await this.getPromotionGoodsMap(promotionIds, goodsIds);
+    }
+    return list.map((item) => {
+      const basePrice = this.normalizePrice(
+        item && item.retail_price,
+        this.normalizePrice(item && item.min_retail_price, 0)
+      );
+      const source = Object.assign({}, item, {
+        goods_id: Number(item && (item.goods_id || item.id) || 0),
+        retail_price: basePrice
+      });
+      const decorated = promotions.length
+        ? this.decorateOne(source, promotions, promotionGoodsMap, nowTs)
+        : this.buildDefaultDecoration(source, basePrice);
+      const hasPromotion = Number(decorated.has_promotion || 0) === 1;
+      const effectiveUnitPrice = this.normalizePrice(
+        hasPromotion ? decorated.promotion_price : decorated.retail_price,
+        basePrice
+      );
+      const originalUnitPrice = this.normalizePrice(
+        hasPromotion ? decorated.promotion_original_price : decorated.retail_price,
+        basePrice
+      );
+      const unitDiscount = Math.max(0, originalUnitPrice - effectiveUnitPrice);
+      const effectiveText = this.formatPrice(effectiveUnitPrice);
+      const originalText = this.formatPrice(originalUnitPrice);
+      const promoTag = String(decorated.promotion_tag || decorated.promo_tag || '');
+      return Object.assign({}, decorated, {
+        has_promotion: hasPromotion ? 1 : 0,
+        promotion_price: effectiveText,
+        promotion_original_price: originalText,
+        promotion_tag: promoTag,
+        display_price: effectiveText,
+        effective_unit_price: effectiveText,
+        promotion_discount_per_unit: this.formatPrice(unitDiscount),
+        // 保留历史字段，兼容旧前端读取逻辑。
+        has_coupon_promo: hasPromotion ? 1 : 0,
+        promo_price: effectiveText,
+        original_price: originalText,
+        promo_tag: promoTag
+      });
+    });
+  }
+
+  summarizeCartItems(cartItems) {
+    const list = Array.isArray(cartItems) ? cartItems : [];
+    let goodsOriginal = 0;
+    let goodsPromoted = 0;
+    list.forEach((item) => {
+      const number = Number(item && item.number || 0);
+      if (number <= 0) {
+        return;
+      }
+      const originalUnit = this.normalizePrice(
+        item && (item.promotion_original_price !== undefined ? item.promotion_original_price : item.retail_price),
+        this.normalizePrice(item && item.retail_price, 0)
+      );
+      const promotedUnit = this.normalizePrice(
+        item && (item.display_price !== undefined ? item.display_price : item.promotion_price),
+        originalUnit
+      );
+      goodsOriginal += originalUnit * number;
+      goodsPromoted += promotedUnit * number;
+    });
+    goodsOriginal = Math.round(goodsOriginal * 100) / 100;
+    goodsPromoted = Math.round(goodsPromoted * 100) / 100;
+    const promotionDiscount = Math.max(0, Math.round((goodsOriginal - goodsPromoted) * 100) / 100);
+    return {
+      goodsOriginalNumber: goodsOriginal,
+      goodsTotalNumber: goodsPromoted,
+      promotionNumber: promotionDiscount,
+      goodsOriginalPrice: this.formatPrice(goodsOriginal),
+      goodsTotalPrice: this.formatPrice(goodsPromoted),
+      promotionPrice: this.formatPrice(promotionDiscount)
+    };
   }
 };

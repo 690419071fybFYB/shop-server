@@ -6,6 +6,68 @@ module.exports = class extends Base {
         const couponService = this.service('coupon', 'api');
         return couponService.normalizeIdList(value);
     }
+    async decorateCartForResponse(cartList, {userId = 0, numberChange = 0} = {}) {
+        const list = Array.isArray(cartList) ? cartList : [];
+        const promotionService = this.service('promotion', 'api');
+        let decoratedList = [];
+        try {
+            decoratedList = await promotionService.decorateCartItemsWithPromotion(list);
+        } catch (err) {
+            think.logger && think.logger.error && think.logger.error(`[cart.decorateCartForResponse] ${err.message || err}`);
+            decoratedList = list.map((item) => {
+                const price = Number(item && item.retail_price || 0);
+                const priceText = Number.isFinite(price) ? price.toFixed(2) : '0.00';
+                return Object.assign({}, item, {
+                    has_promotion: 0,
+                    promotion_price: priceText,
+                    promotion_original_price: priceText,
+                    promotion_tag: '',
+                    promotion_end_at: 0,
+                    promotion_countdown_seconds: 0,
+                    display_price: priceText,
+                    effective_unit_price: priceText,
+                    promotion_discount_per_unit: '0.00',
+                    // 兼容旧前端字段
+                    has_coupon_promo: 0,
+                    promo_price: priceText,
+                    original_price: priceText,
+                    promo_tag: ''
+                });
+            });
+        }
+        let goodsCount = 0;
+        let goodsAmount = 0;
+        let checkedGoodsCount = 0;
+        let checkedGoodsAmount = 0;
+        decoratedList.forEach((item) => {
+            const number = Number(item.number || 0);
+            if (number <= 0) {
+                return;
+            }
+            const unitPrice = Number(item.display_price || item.promotion_price || item.retail_price || 0);
+            goodsCount += number;
+            goodsAmount += number * unitPrice;
+            if (Number(item.checked || 0) === 1) {
+                checkedGoodsCount += number;
+                checkedGoodsAmount += number * unitPrice;
+            }
+        });
+        const checkedList = decoratedList.filter(item => Number(item.checked || 0) === 1);
+        const checkedSummary = promotionService.summarizeCartItems(checkedList);
+        return {
+            cartList: decoratedList,
+            cartTotal: {
+                goodsCount: goodsCount,
+                goodsAmount: goodsAmount.toFixed(2),
+                checkedGoodsCount: checkedGoodsCount,
+                checkedGoodsAmount: checkedGoodsAmount.toFixed(2),
+                checkedGoodsOriginalPrice: checkedSummary.goodsOriginalPrice,
+                checkedPromotionPrice: checkedSummary.promotionPrice,
+                user_id: userId,
+                numberChange: numberChange
+            }
+        };
+    }
     async getCart(type) {
 		const userId = this.getLoginUserId();
         let cartList = [];
@@ -23,11 +85,6 @@ module.exports = class extends Base {
                 is_fast: 1
             }).select();
         }
-        // 获取购物车统计信息
-        let goodsCount = 0;
-        let goodsAmount = 0;
-        let checkedGoodsCount = 0;
-        let checkedGoodsAmount = 0;
         let numberChange = 0;
         let normalizedCartList = [];
         for (const cartItem of cartList) {
@@ -70,13 +127,7 @@ module.exports = class extends Base {
                     });
                     continue;
                 }
-                goodsCount += cartItem.number;
-                goodsAmount += cartItem.number * retail_price;
                 cartItem.retail_price = retail_price;
-                if (!think.isEmpty(cartItem.checked && productNum > 0)) {
-                    checkedGoodsCount += cartItem.number;
-                    checkedGoodsAmount += cartItem.number * Number(retail_price);
-                }
                 // 查找商品的图片
                 let info = await this.model('goods').where({
                     id: cartItem.goods_id
@@ -94,19 +145,10 @@ module.exports = class extends Base {
                 normalizedCartList.push(cartItem);
             }
         }
-        let cAmount = checkedGoodsAmount.toFixed(2);
-        let aAmount = checkedGoodsAmount;
-        return {
-            cartList: normalizedCartList,
-            cartTotal: {
-                goodsCount: goodsCount,
-                goodsAmount: goodsAmount.toFixed(2),
-                checkedGoodsCount: checkedGoodsCount,
-                checkedGoodsAmount: cAmount,
-                user_id: userId,
-                numberChange: numberChange
-            }
-        };
+        return this.decorateCartForResponse(normalizedCartList, {
+            userId: userId,
+            numberChange: numberChange
+        });
     }
     /**
      * 获取购物车信息，所有对购物车的增删改操作，都要重新返回购物车的信息
@@ -426,18 +468,16 @@ module.exports = class extends Base {
      * @returns {Promise.<void>}
      */
     async checkoutAction() {
-        const currentTime = parseInt(new Date().getTime() / 1000);
 		const userId = this.getLoginUserId();;
         let orderFrom = this.get('orderFrom');
-        const type = this.get('type'); // 是否团购
+        const type = Number(this.get('type') || 0); // 是否团购
         const addressId = this.get('addressId'); // 收货地址id
-        const addType = this.get('addType');
+        const addType = Number(this.get('addType') || 0);
         const selectedUserCouponIds = this.parseSelectedCouponIds(this.get('selectedUserCouponIds') || []);
         let goodsCount = 0; // 购物车的数量
-        let goodsMoney = 0; // 购物车的总价
         let freightPrice = 0;
         let outStock = 0;
-        let cartData = '';
+        let cartData = null;
         // 获取要购买的商品
         if (type == 0) {
             if (addType == 0) {
@@ -448,12 +488,21 @@ module.exports = class extends Base {
                 cartData = await this.getAgainCart(orderFrom);
             }
         }
+        if (!cartData || !Array.isArray(cartData.cartList)) {
+            cartData = {
+                cartList: [],
+                cartTotal: {
+                    numberChange: 0
+                }
+            };
+        }
         const checkedGoodsList = cartData.cartList.filter(function(v) {
             return v.checked === 1;
         });
+        const promotionService = this.service('promotion', 'api');
+        const checkedPriceSummary = promotionService.summarizeCartItems(checkedGoodsList);
         for (const item of checkedGoodsList) {
-            goodsCount = goodsCount + item.number;
-            goodsMoney = goodsMoney + item.number * item.retail_price;
+            goodsCount = goodsCount + Number(item.number || 0);
             if (item.goods_number <= 0 || item.is_on_sale == 0) {
                 outStock = Number(outStock) + 1;
             }
@@ -464,7 +513,7 @@ module.exports = class extends Base {
             }).select();
             let againGoodsCount = 0;
             for (const item of againGoods) {
-                againGoodsCount = againGoodsCount + item.number;
+                againGoodsCount = againGoodsCount + Number(item.number || 0);
             }
             if (goodsCount != againGoodsCount) {
                 outStock = 1;
@@ -512,9 +561,11 @@ module.exports = class extends Base {
                 for (const cartItem of cartGoods) {
                     if (item.id == cartItem.freight_template_id) {
                         // 这个在判断，购物车中的商品是否属于这个运费模版，如果是，则加一，但是，这里要先判断下，这个商品是否符合满件包邮或满金额包邮，如果是包邮的，那么要去掉
-                        item.number = item.number + cartItem.number;
-                        item.money = item.money + cartItem.number * cartItem.retail_price;
-                        item.goods_weight = item.goods_weight + cartItem.number * cartItem.goods_weight;
+                        const currentNumber = Number(cartItem.number || 0);
+                        const currentWeight = Number(cartItem.goods_weight || 0);
+                        item.number = item.number + currentNumber;
+                        item.money = item.money + currentNumber * Number(cartItem.display_price || cartItem.promotion_price || cartItem.retail_price || 0);
+                        item.goods_weight = item.goods_weight + currentNumber * currentWeight;
                     }
                 }
             }
@@ -615,19 +666,17 @@ module.exports = class extends Base {
         } else {
             checkedAddress = 0;
         }
-        // 计算订单的费用
-        let goodsTotalPrice = cartData.cartTotal.checkedGoodsAmount; // 商品总价
-        // 获取是否有可用红包
-        let money = cartData.cartTotal.checkedGoodsAmount;
-        let orderTotalPrice = 0;
-        let def = await this.model('settings').where({
-            id: 1
-        }).find();
-        orderTotalPrice = Number(money) + Number(freightPrice) // 订单的总价
+        const goodsOriginalPrice = checkedPriceSummary.goodsOriginalPrice;
+        const promotionPrice = checkedPriceSummary.promotionPrice;
+        const goodsTotalPrice = checkedPriceSummary.goodsTotalPrice;
+        const orderTotalPrice = Number(checkedPriceSummary.goodsTotalNumber || 0) + Number(freightPrice || 0);
         const couponService = this.service('coupon', 'api');
+        const couponCartItems = checkedGoodsList.map(item => Object.assign({}, item, {
+            retail_price: item.display_price || item.promotion_price || item.retail_price
+        }));
         const couponPreview = await couponService.previewCartCoupons({
             userId: userId,
-            cartItems: checkedGoodsList,
+            cartItems: couponCartItems,
             selectedUserCouponIds: selectedUserCouponIds,
             freightPrice: Number(freightPrice || 0)
         });
@@ -636,6 +685,8 @@ module.exports = class extends Base {
             checkedAddress: checkedAddress,
             freightPrice: freightPrice,
             checkedGoodsList: checkedGoodsList,
+            goodsOriginalPrice: goodsOriginalPrice,
+            promotionPrice: promotionPrice,
             goodsTotalPrice: goodsTotalPrice,
             orderTotalPrice: orderTotalPrice.toFixed(2),
             actualPrice: couponPreview.actualPrice,
@@ -667,18 +718,7 @@ module.exports = class extends Base {
             is_fast: 0,
             is_delete: 0
         }).select();
-        // 获取购物车统计信息
-        let goodsCount = 0;
-        let goodsAmount = 0;
-        let checkedGoodsCount = 0;
-        let checkedGoodsAmount = 0;
         for (const cartItem of cartList) {
-            goodsCount += cartItem.number;
-            goodsAmount += cartItem.number * cartItem.retail_price;
-            if (!think.isEmpty(cartItem.checked)) {
-                checkedGoodsCount += cartItem.number;
-                checkedGoodsAmount += cartItem.number * Number(cartItem.retail_price);
-            }
             // 查找商品的图片
             let info = await this.model('goods').where({
                 id: cartItem.goods_id
@@ -698,18 +738,13 @@ module.exports = class extends Base {
             cartItem.list_pic_url = info.list_pic_url;
             cartItem.goods_number = info.goods_number;
             cartItem.weight_count = cartItem.number * Number(cartItem.goods_weight);
-        }
-        let cAmount = checkedGoodsAmount.toFixed(2);
-        let aAmount = checkedGoodsAmount;
-        return {
-            cartList: cartList,
-            cartTotal: {
-                goodsCount: goodsCount,
-                goodsAmount: goodsAmount.toFixed(2),
-                checkedGoodsCount: checkedGoodsCount,
-                checkedGoodsAmount: cAmount,
-                user_id: userId
+            if (num <= 0) {
+                cartItem.checked = 0;
             }
-        };
+        }
+        return this.decorateCartForResponse(cartList, {
+            userId: userId,
+            numberChange: 0
+        });
     }
 };
