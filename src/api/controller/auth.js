@@ -4,6 +4,10 @@ const validator = require("../../common/utils/validate");
 module.exports = class extends Base {
   async loginByWeixinAction() {
     const code = validator.sanitizeText(this.post("code"), 128);
+    const inviteCode = validator
+      .sanitizeText(this.post("invite_code"), 32)
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
     if (!validator.isValidWeixinCode(code)) {
       return this.fail(400, "code参数不合法");
     }
@@ -82,10 +86,28 @@ module.exports = class extends Base {
     if (think.isEmpty(newUserInfo) || think.isEmpty(sessionKey)) {
       return this.fail("登录失败4");
     }
+    let inviteResult = null;
+    try {
+      const inviteService = this.service("invite", "api");
+      if (is_new === 1 && inviteCode) {
+        inviteResult = await inviteService.processNewUserInvite({
+          inviteeUserId: userId,
+          inviteCode: inviteCode,
+        });
+      }
+      await inviteService.ensureUserInviteCode(userId);
+    } catch (err) {
+      think.logger &&
+        think.logger.error &&
+        think.logger.error(
+          `[auth.loginByWeixin.invite] userId=${userId} ${err.message || err}`
+        );
+    }
     return this.success({
       token: sessionKey,
       userInfo: newUserInfo,
       is_new: is_new,
+      invite_result: inviteResult,
     });
   }
   async logoutAction() {

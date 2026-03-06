@@ -488,7 +488,7 @@ module.exports = class extends think.Service {
     }));
   }
 
-  async receiveCoupon(userId, couponId) {
+  async receiveCoupon(userId, couponId, options = {}) {
     const uid = Number(userId);
     const cid = Number(couponId);
     if (uid <= 0 || cid <= 0) {
@@ -522,19 +522,27 @@ module.exports = class extends think.Service {
         throw new Error('不在领取时间内');
       }
 
-      const rule = this.parseSegmentRules(coupon.segment_rules_json);
-      const segmentKeys = await this.getUserSegmentKeys(uid, orderModel);
-      if (!this.matchSegments(segmentKeys, rule)) {
-        throw new Error('当前用户不满足领取条件');
+      if (!options.skipSegmentCheck) {
+        const rule = this.parseSegmentRules(coupon.segment_rules_json);
+        const segmentKeys = await this.getUserSegmentKeys(uid, orderModel);
+        if (!this.matchSegments(segmentKeys, rule)) {
+          throw new Error('当前用户不满足领取条件');
+        }
       }
 
-      const existed = await userCouponModel.where({
+      const existedCount = Number(await userCouponModel.where({
         user_id: uid,
         coupon_id: cid,
         is_delete: 0
-      }).find();
-      if (!think.isEmpty(existed)) {
+      }).count('id') || 0);
+      if (!options.allowMultiple && existedCount > 0) {
         throw new Error('该优惠券已领取');
+      }
+      if (!options.ignorePerUserLimit) {
+        const perUserLimit = Number(coupon.per_user_limit || 1);
+        if (perUserLimit > 0 && existedCount >= perUserLimit) {
+          throw new Error('已达到领取上限');
+        }
       }
 
       let incQuery = couponModel.where({
