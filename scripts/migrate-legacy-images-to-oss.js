@@ -26,18 +26,18 @@ const ONLY_TABLES = (getArg('--tables', '') || '')
   .map((s) => s.trim())
   .filter(Boolean);
 
-const ossConfig = appConfig.oss || {};
+const cosConfig = appConfig.cos || {};
 const dbPrefix = dbConfig.prefix || '';
-const ossDomain = (ossConfig.domain || '').replace(/\/+$/, '');
+const cosDomain = (cosConfig.domain || '').replace(/\/+$/, '');
 
-if (!ossConfig.region || !ossConfig.bucket || !ossConfig.accessKeyId || !ossConfig.accessKeySecret) {
-  console.error('[FATAL] OSS 配置不完整，请先检查 src/common/config/config.js 的 oss 配置。');
+if (!cosConfig.region || !cosConfig.bucket || !cosConfig.accessKeyId || !cosConfig.accessKeySecret) {
+  console.error('[FATAL] COS 配置不完整，请先检查 src/common/config/config.js 的 COS 配置。');
   process.exit(1);
 }
 
 const client = new COS({
-  SecretId: ossConfig.accessKeyId,
-  SecretKey: ossConfig.accessKeySecret
+  SecretId: cosConfig.accessKeyId,
+  SecretKey: cosConfig.accessKeySecret
 });
 
 function cosPutObject(params) {
@@ -78,7 +78,7 @@ function shouldMigrateUrl(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return false;
   const url = rawUrl.trim();
   if (!/^https?:\/\//i.test(url)) return false;
-  if (ossDomain && url.startsWith(ossDomain)) return false;
+  if (cosDomain && url.startsWith(cosDomain)) return false;
   if (/^https?:\/\/(127\.0\.0\.1|localhost)/i.test(url)) return false;
   if (url.includes('.aliyuncs.com/')) return false;
   const isLegacyHost = /yanxuan\.nosdn\.127\.net|nos\.netease\.com/i.test(url);
@@ -157,7 +157,7 @@ function downloadImage(url, redirectCount = 0) {
   });
 }
 
-async function uploadToOssByUrl(sourceUrl) {
+async function uploadToCosByUrl(sourceUrl) {
   if (urlCache.has(sourceUrl)) return urlCache.get(sourceUrl);
   if (failedUrls.has(sourceUrl)) throw failedUrls.get(sourceUrl);
 
@@ -172,14 +172,14 @@ async function uploadToOssByUrl(sourceUrl) {
 
   if (!DRY_RUN) {
     await cosPutObject({
-      Bucket: ossConfig.bucket,
-      Region: ossConfig.region,
+      Bucket: cosConfig.bucket,
+      Region: cosConfig.region,
       Key: key,
       Body: body,
       ContentType: contentType || 'application/octet-stream'
     });
   }
-  const migratedUrl = `${ossDomain}/${key}`;
+  const migratedUrl = `${cosDomain}/${key}`;
   urlCache.set(sourceUrl, migratedUrl);
   return migratedUrl;
 }
@@ -187,7 +187,7 @@ async function uploadToOssByUrl(sourceUrl) {
 async function migrateTextField(value) {
   if (!value || typeof value !== 'string') return { changed: false, nextValue: value };
   if (shouldMigrateUrl(value) && isLikelyImageUrl(value)) {
-    const migratedUrl = await uploadToOssByUrl(value);
+    const migratedUrl = await uploadToCosByUrl(value);
     return { changed: migratedUrl !== value, nextValue: migratedUrl };
   }
   return { changed: false, nextValue: value };
@@ -206,7 +206,7 @@ async function migrateHtmlField(html) {
     while (queue.length) {
       const url = queue.shift();
       try {
-        const migratedUrl = await uploadToOssByUrl(url);
+        const migratedUrl = await uploadToCosByUrl(url);
         replacements.set(url, migratedUrl);
       } catch (err) {
         failedUrls.set(url, err);

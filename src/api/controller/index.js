@@ -37,7 +37,6 @@ module.exports = class extends Base {
 			}).select();
 			categoryItem.goodsList = categoryGoods;
 		}
-		const userId = this.getLoginUserId();
 		if (Array.isArray(categoryList) && categoryList.length > 0) {
 			try {
 				const promotionService = this.service('promotion', 'api');
@@ -49,7 +48,7 @@ module.exports = class extends Base {
 						}
 					});
 				});
-				const decoratedGoods = await promotionService.decorateGoodsWithPromotion(userId, flatGoodsList);
+				const decoratedGoods = await promotionService.decorateGoodsWithPromotion(flatGoodsList);
 				const goodsMap = new Map(decoratedGoods.map(item => [Number(item.id), item]));
 				categoryList.forEach((item) => {
 					item.goodsList = (item.goodsList || []).map(goods => goodsMap.get(Number(goods.id)) || goods);
@@ -58,6 +57,7 @@ module.exports = class extends Base {
 				think.logger && think.logger.error && think.logger.error(`[index.appInfo.decorateGoodsWithPromotion] ${err.message || err}`);
 			}
 		}
+		const userId = this.getLoginUserId();
 		let cartCount = await this.model('cart').where({
 			user_id: userId,
 			is_delete: 0

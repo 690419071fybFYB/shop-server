@@ -27,8 +27,8 @@ module.exports = class extends Base {
         return this.success(info);
     }
     async getQiniuTokenAction(){
-        const ossService = this.service('oss'); // 使用OSS服务
-        let data = await ossService.getUploadSignature();
+        const cosService = this.service('cos'); // 使用COS服务
+        let data = await cosService.getUploadSignature();
         let info = {
             uploadUrl: data.uploadUrl,  // 签名URL
             key: data.key,              // 文件key

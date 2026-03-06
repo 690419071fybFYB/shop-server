@@ -14,19 +14,6 @@ module.exports = class extends Base {
         const goodsId = this.get('id');
 		const userId = this.getLoginUserId();;
         const model = this.model('goods');
-        const normalizePrice = (value, fallback = 0) => {
-            if (typeof value === 'number') {
-                return Number.isNaN(value) ? fallback : value;
-            }
-            const text = String(value || '').trim();
-            if (!text) return fallback;
-            if (text.includes('-')) {
-                const first = Number(text.split('-')[0]);
-                return Number.isNaN(first) ? fallback : first;
-            }
-            const num = Number(text);
-            return Number.isNaN(num) ? fallback : num;
-        };
         let info = await model.where({
             id: goodsId,
 			is_delete:0
@@ -50,42 +37,39 @@ module.exports = class extends Base {
         info.goods_number = goodsNumber;
         try {
             const promotionService = this.service('promotion', 'api');
-            const infoBasePrice = normalizePrice(info.min_retail_price, normalizePrice(info.retail_price, 0));
-            const decoratedInfoList = await promotionService.decorateGoodsWithPromotion(userId, [{
+            const decoratedInfoList = await promotionService.decorateGoodsWithPromotion([{
                 id: Number(info.id || goodsId),
-                min_retail_price: infoBasePrice
+                min_retail_price: info.min_retail_price,
+                retail_price: info.retail_price
             }]);
             if (Array.isArray(decoratedInfoList) && decoratedInfoList.length > 0) {
-                const decoratedInfo = decoratedInfoList[0];
-                info.has_promo = Number(decoratedInfo.has_promo || 0);
-                info.promo_source = decoratedInfo.promo_source || 'none';
-                info.promo_type = decoratedInfo.promo_type || '';
-                info.promo_price = decoratedInfo.promo_price || infoBasePrice;
-                info.original_price = decoratedInfo.original_price || infoBasePrice;
-                info.promo_tag = decoratedInfo.promo_tag || '';
-                info.promo_end_at = Number(decoratedInfo.promo_end_at || 0);
-                info.promo_countdown_seconds = Number(decoratedInfo.promo_countdown_seconds || 0);
-                info.promo_stock_percent = Number(decoratedInfo.promo_stock_percent || 0);
-                info.has_coupon_promo = Number(decoratedInfo.has_coupon_promo || 0);
+                info = Object.assign(info, decoratedInfoList[0]);
             }
             if (Array.isArray(productList) && productList.length > 0) {
-                productList = await promotionService.decorateSkuListWithPromotion(userId, Number(goodsId), productList);
+                const productPriceList = productList.map(item => ({
+                    id: Number(info.id || goodsId),
+                    min_retail_price: item.retail_price,
+                    retail_price: item.retail_price
+                }));
+                const decoratedProducts = await promotionService.decorateGoodsWithPromotion(productPriceList);
+                productList = productList.map((item, index) => {
+                    const decorated = decoratedProducts[index] || {};
+                    return Object.assign({}, item, {
+                        has_promotion: Number(decorated.has_promotion || 0),
+                        promotion_price: decorated.promotion_price || item.retail_price,
+                        promotion_original_price: decorated.promotion_original_price || item.retail_price,
+                        promotion_tag: decorated.promotion_tag || '',
+                        promotion_end_at: Number(decorated.promotion_end_at || 0),
+                        promotion_countdown_seconds: Number(decorated.promotion_countdown_seconds || 0),
+                        has_coupon_promo: Number(decorated.has_coupon_promo || 0),
+                        promo_price: decorated.promo_price || item.retail_price,
+                        original_price: decorated.original_price || item.retail_price,
+                        promo_tag: decorated.promo_tag || ''
+                    });
+                });
             }
         } catch (err) {
             think.logger && think.logger.error && think.logger.error(`[goods.detail.promotionDecorate] ${err.message || err}`);
-        }
-        if (!('has_promo' in info)) {
-            const fallbackPrice = normalizePrice(info.min_retail_price, normalizePrice(info.retail_price, 0));
-            info.has_promo = 0;
-            info.promo_source = 'none';
-            info.promo_type = '';
-            info.promo_price = fallbackPrice;
-            info.original_price = fallbackPrice;
-            info.promo_tag = '';
-            info.promo_end_at = 0;
-            info.promo_countdown_seconds = 0;
-            info.promo_stock_percent = 0;
-            info.has_coupon_promo = 0;
         }
         return this.success({
             info: info,
@@ -144,15 +128,16 @@ module.exports = class extends Base {
                 sort_order: 'asc'
             };
         }
-        const goodsData = await model.where(whereMap).order(orderMap).select();
-        try {
-            const promotionService = this.service('promotion', 'api');
-            const decorated = await promotionService.decorateGoodsWithPromotion(userId, goodsData);
-            return this.success(decorated);
-        } catch (err) {
-            think.logger && think.logger.error && think.logger.error(`[goods.list.promotionDecorate] ${err.message || err}`);
-            return this.success(goodsData);
+        let goodsData = await model.where(whereMap).order(orderMap).select();
+        if (Array.isArray(goodsData) && goodsData.length > 0) {
+            try {
+                const promotionService = this.service('promotion', 'api');
+                goodsData = await promotionService.decorateGoodsWithPromotion(goodsData);
+            } catch (err) {
+                think.logger && think.logger.error && think.logger.error(`[goods.list.promotionDecorate] ${err.message || err}`);
+            }
         }
+        return this.success(goodsData);
     }
     /**
      * 在售的商品总数

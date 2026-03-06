@@ -43,10 +43,10 @@ module.exports = {
         ip_server_url:'http://www.kdniao.com/External/GetIp.aspx'
     },
     // 腾讯云COS配置
-    oss: {
+    cos: {
         region: cosRegion,
-        accessKeyId: process.env.COS_SECRET_ID || process.env.OSS_ACCESS_KEY_ID || '',
-        accessKeySecret: process.env.COS_SECRET_KEY || process.env.OSS_ACCESS_KEY_SECRET || '',
+        accessKeyId: process.env.COS_SECRET_ID || '',
+        accessKeySecret: process.env.COS_SECRET_KEY || '',
         bucket: cosBucket,
         domain: cosDomain
     },

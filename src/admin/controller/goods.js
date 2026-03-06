@@ -3,7 +3,7 @@ const moment = require('moment');
 const fs = require('fs');
 const path = require("path");
 const htmlSanitizer = require('../../common/utils/sanitize_html');
-// const qiniu = require('qiniu'); // 已替换为阿里云OSS
+// const qiniu = require('qiniu'); // 已替换为腾讯云COS
 
 const IMPORT_MAX_FILE_SIZE = 5 * 1024 * 1024;
 const IMPORT_ACCEPTED_MIME = [
@@ -257,6 +257,119 @@ module.exports = class extends Base {
             item.product = product;
         }
         return this.success(data);
+    }
+    async pickerAction() {
+        const page = Math.max(Number(this.get('page') || 1), 1);
+        const rawSize = Number(this.get('size') || 10);
+        const size = Math.min(Math.max(rawSize || 10, 1), 50);
+        const keyword = String(this.get('keyword') || '').trim();
+        const parentCategoryId = Number(this.get('parentCategoryId') || 0);
+        const categoryId = Number(this.get('categoryId') || 0);
+        const isOnSale = this.get('isOnSale');
+        const sortByRaw = String(this.get('sortBy') || 'id').trim();
+        const sortOrderRaw = String(this.get('sortOrder') || 'desc').trim().toLowerCase();
+
+        const sortWhitelist = new Set(['id', 'retail_price', 'sell_volume', 'goods_number']);
+        const sortBy = sortWhitelist.has(sortByRaw) ? sortByRaw : 'id';
+        const sortOrder = sortOrderRaw === 'asc' ? 'asc' : 'desc';
+
+        const where = {
+            is_delete: 0
+        };
+        if (keyword) {
+            where.name = ['like', `%${keyword}%`];
+        }
+        if (categoryId > 0) {
+            where.category_id = categoryId;
+        } else if (parentCategoryId > 0) {
+            const children = await this.model('category').where({
+                parent_id: parentCategoryId
+            }).field('id').select();
+            const childIds = children.map(item => Number(item.id)).filter(id => id > 0);
+            if (childIds.length > 0) {
+                where.category_id = ['IN', childIds];
+            } else {
+                where.category_id = -1;
+            }
+        }
+        if (isOnSale !== undefined && isOnSale !== null && `${isOnSale}` !== '') {
+            where.is_on_sale = Number(isOnSale) === 1 ? 1 : 0;
+        }
+
+        const fields = 'id,name,list_pic_url,category_id,retail_price,goods_number,is_on_sale,sell_volume';
+        const data = await this.model('goods')
+            .where(where)
+            .field(fields)
+            .order(`${sortBy} ${sortOrder}`)
+            .page(page, size)
+            .countSelect();
+
+        const categoryIds = Array.from(new Set((data.data || []).map(item => Number(item.category_id)).filter(id => id > 0)));
+        let categoryMap = {};
+        if (categoryIds.length > 0) {
+            const categoryRows = await this.model('category').where({
+                id: ['IN', categoryIds]
+            }).field('id,name').select();
+            categoryMap = categoryRows.reduce((acc, row) => {
+                acc[Number(row.id)] = row.name || '';
+                return acc;
+            }, {});
+        }
+
+        data.data = (data.data || []).map((item) => ({
+            ...item,
+            category_name: categoryMap[Number(item.category_id)] || ''
+        }));
+        return this.success(data);
+    }
+    async pickerSelectedAction() {
+        const idsRaw = String(this.get('ids') || '').trim();
+        if (!idsRaw) {
+            return this.success([]);
+        }
+        const ids = Array.from(new Set(idsRaw
+            .split(',')
+            .map((id) => Number(String(id).trim()))
+            .filter((id) => id > 0)
+        ));
+        if (!ids.length) {
+            return this.success([]);
+        }
+
+        const fields = 'id,name,list_pic_url,category_id,retail_price,goods_number,is_on_sale,sell_volume';
+        const rows = await this.model('goods')
+            .where({
+                id: ['IN', ids],
+                is_delete: 0
+            })
+            .field(fields)
+            .select();
+
+        const categoryIds = Array.from(new Set(rows.map(item => Number(item.category_id)).filter(id => id > 0)));
+        let categoryMap = {};
+        if (categoryIds.length > 0) {
+            const categoryRows = await this.model('category').where({
+                id: ['IN', categoryIds]
+            }).field('id,name').select();
+            categoryMap = categoryRows.reduce((acc, row) => {
+                acc[Number(row.id)] = row.name || '';
+                return acc;
+            }, {});
+        }
+
+        const orderMap = ids.reduce((acc, id, index) => {
+            acc[id] = index;
+            return acc;
+        }, {});
+        const result = rows.map((item) => ({
+            ...item,
+            category_name: categoryMap[Number(item.category_id)] || ''
+        })).sort((a, b) => {
+            const indexA = orderMap[Number(a.id)];
+            const indexB = orderMap[Number(b.id)];
+            return Number(indexA) - Number(indexB);
+        });
+        return this.success(result);
     }
     async getExpressDataAction() {
         let kd = [];
@@ -1251,10 +1364,10 @@ module.exports = class extends Base {
             return this.fail(400, '图片地址不合法');
         }
         try {
-            const ossService = this.service('oss');
-            const ossUrl = await ossService.fetchAndUpload(remoteUrl);
+            const cosService = this.service('cos');
+            const cosUrl = await cosService.fetchAndUpload(remoteUrl);
             console.info(`[uploadHttpsImage] operator=${think.userId || 0} target=${remoteUrl} result=success`);
-            return this.success(ossUrl);
+            return this.success(cosUrl);
         } catch (error) {
             console.warn(`[uploadHttpsImage] operator=${think.userId || 0} target=${remoteUrl} result=failed reason=${error && error.message ? error.message : 'unknown'}`);
             console.error('上传HTTPS图片失败:', error);
