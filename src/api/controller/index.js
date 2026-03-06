@@ -6,10 +6,52 @@ module.exports = class extends Base {
         return this.display();
     }
     async appInfoAction() {
-        const banner = await this.model('ad').where({
-            enabled: 1,
-            is_delete: 0
-        }).field('link_type,goods_id,image_url,link').order('sort_order asc').select();
+        const nowTs = this.getTime();
+        const adRows = await this.model('ad').query(`
+            SELECT
+                id,
+                title,
+                link_type,
+                goods_id,
+                image_url,
+                link,
+                IFNULL(start_time, 0) AS start_time,
+                IFNULL(end_time, 0) AS end_time,
+                IFNULL(sort_order, 0) AS sort_order,
+                IFNULL(placement, 1) AS placement
+            FROM hiolabs_ad
+            WHERE enabled = 1
+              AND is_delete = 0
+              AND IFNULL(start_time, 0) <= ${nowTs}
+              AND (IFNULL(end_time, 0) = 0 OR end_time >= ${nowTs})
+            ORDER BY sort_order ASC, id DESC
+        `);
+        const banner = (adRows || [])
+          .filter(item => [1, 3].includes(Number(item.placement || 1)))
+          .map(item => ({
+              id: Number(item.id || 0),
+              title: String(item.title || ''),
+              link_type: Number(item.link_type || 0),
+              goods_id: Number(item.goods_id || 0),
+              image_url: String(item.image_url || ''),
+              link: String(item.link || ''),
+              start_time: Number(item.start_time || 0),
+              end_time: Number(item.end_time || 0),
+              sort_order: Number(item.sort_order || 0)
+          }));
+        const popupAd = (adRows || [])
+          .filter(item => [2, 3].includes(Number(item.placement || 1)))
+          .map(item => ({
+              id: Number(item.id || 0),
+              title: String(item.title || ''),
+              link_type: Number(item.link_type || 0),
+              goods_id: Number(item.goods_id || 0),
+              image_url: String(item.image_url || ''),
+              link: String(item.link || ''),
+              start_time: Number(item.start_time || 0),
+              end_time: Number(item.end_time || 0),
+              sort_order: Number(item.sort_order || 0)
+          }))[0] || null;
         const notice = await this.model('notice').where({
             is_delete: 0
         }).field('content').select();
@@ -68,6 +110,7 @@ module.exports = class extends Base {
 		let data = {
 			channel: channel,
 			banner: banner,
+            popupAd: popupAd,
 			notice: notice,
 			categoryList: categoryList,
 			cartCount: cartCount,
