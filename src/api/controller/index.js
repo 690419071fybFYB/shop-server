@@ -1,20 +1,16 @@
 const Base = require('./base.js');
 // const view = require('think-view');
 module.exports = class extends Base {
-    async indexAction() {
-        return this.success({
-            message: 'ok'
-        });
-    }
-    async appInfoAction() {
-        const nowTs = this.getTime();
-        const adRows = await this.model('ad').query(`
+    async queryActiveAds(nowTs) {
+        const sqlWithCropColumns = `
             SELECT
                 id,
                 title,
                 link_type,
                 goods_id,
                 image_url,
+                IFNULL(banner_image_url, '') AS banner_image_url,
+                IFNULL(popup_image_url, '') AS popup_image_url,
                 link,
                 IFNULL(start_time, 0) AS start_time,
                 IFNULL(end_time, 0) AS end_time,
@@ -26,7 +22,42 @@ module.exports = class extends Base {
               AND IFNULL(start_time, 0) <= ${nowTs}
               AND (IFNULL(end_time, 0) = 0 OR end_time >= ${nowTs})
             ORDER BY sort_order ASC, id DESC
-        `);
+        `;
+        try {
+            return await this.model('ad').query(sqlWithCropColumns);
+        } catch (err) {
+            const fallbackSql = `
+                SELECT
+                    id,
+                    title,
+                    link_type,
+                    goods_id,
+                    image_url,
+                    '' AS banner_image_url,
+                    '' AS popup_image_url,
+                    link,
+                    IFNULL(start_time, 0) AS start_time,
+                    IFNULL(end_time, 0) AS end_time,
+                    IFNULL(sort_order, 0) AS sort_order,
+                    IFNULL(placement, 1) AS placement
+                FROM hiolabs_ad
+                WHERE enabled = 1
+                  AND is_delete = 0
+                  AND IFNULL(start_time, 0) <= ${nowTs}
+                  AND (IFNULL(end_time, 0) = 0 OR end_time >= ${nowTs})
+                ORDER BY sort_order ASC, id DESC
+            `;
+            return await this.model('ad').query(fallbackSql);
+        }
+    }
+    async indexAction() {
+        return this.success({
+            message: 'ok'
+        });
+    }
+    async appInfoAction() {
+        const nowTs = this.getTime();
+        const adRows = await this.queryActiveAds(nowTs);
         const banner = (adRows || [])
           .filter(item => [1, 3].includes(Number(item.placement || 1)))
           .map(item => ({
@@ -34,7 +65,9 @@ module.exports = class extends Base {
               title: String(item.title || ''),
               link_type: Number(item.link_type || 0),
               goods_id: Number(item.goods_id || 0),
-              image_url: String(item.image_url || ''),
+              image_url: String(item.banner_image_url || item.image_url || ''),
+              banner_image_url: String(item.banner_image_url || item.image_url || ''),
+              popup_image_url: String(item.popup_image_url || item.image_url || ''),
               link: String(item.link || ''),
               start_time: Number(item.start_time || 0),
               end_time: Number(item.end_time || 0),
@@ -47,7 +80,9 @@ module.exports = class extends Base {
               title: String(item.title || ''),
               link_type: Number(item.link_type || 0),
               goods_id: Number(item.goods_id || 0),
-              image_url: String(item.image_url || ''),
+              image_url: String(item.popup_image_url || item.image_url || ''),
+              banner_image_url: String(item.banner_image_url || item.image_url || ''),
+              popup_image_url: String(item.popup_image_url || item.image_url || ''),
               link: String(item.link || ''),
               start_time: Number(item.start_time || 0),
               end_time: Number(item.end_time || 0),

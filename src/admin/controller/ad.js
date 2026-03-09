@@ -65,6 +65,9 @@ module.exports = class extends Base {
     row.enabled = Number(row.enabled || 0) === 1;
     row.placement = this.normalizePlacement(row.placement);
     row.title = String(row.title || '');
+    row.image_url = String(row.image_url || '');
+    row.banner_image_url = String(row.banner_image_url || row.image_url || '');
+    row.popup_image_url = String(row.popup_image_url || row.image_url || '');
     row.start_time = Number(row.start_time || 0);
     row.end_time = Number(row.end_time || 0);
     row.start_time_text = row.start_time > 0 ? moment.unix(row.start_time).format('YYYY-MM-DD HH:mm:ss') : '';
@@ -81,13 +84,25 @@ module.exports = class extends Base {
     payload.sort_order = Number(values.sort_order || 0);
     payload.enabled = this.normalizeEnabled(values.enabled);
     payload.image_url = String(values.image_url || '').trim();
+    payload.banner_image_url = String(values.banner_image_url || '').trim();
+    payload.popup_image_url = String(values.popup_image_url || '').trim();
     payload.start_time = this.parseDateToSeconds(values.start_time, 0);
     payload.end_time = this.parseDateToSeconds(values.end_time, 0);
     payload.goods_id = Number(values.goods_id || 0);
     payload.link = this.sanitizeMiniProgramPath(values.link);
 
-    if (!payload.image_url) {
-      return {error: '广告图片不能为空'};
+    if (!payload.banner_image_url && payload.image_url && [1, 3].includes(payload.placement)) {
+      payload.banner_image_url = payload.image_url;
+    }
+    if (!payload.popup_image_url && payload.image_url && [2, 3].includes(payload.placement)) {
+      payload.popup_image_url = payload.image_url;
+    }
+
+    if ((payload.placement === 1 || payload.placement === 3) && !payload.banner_image_url) {
+      return {error: '请生成并上传轮播裁剪图'};
+    }
+    if ((payload.placement === 2 || payload.placement === 3) && !payload.popup_image_url) {
+      return {error: '请生成并上传弹窗裁剪图'};
     }
     if (!Number.isFinite(payload.start_time) || !Number.isFinite(payload.end_time) || payload.start_time <= 0 || payload.end_time <= 0) {
       return {error: '开始时间和结束时间不能为空'};
@@ -110,6 +125,17 @@ module.exports = class extends Base {
       if (!this.isValidMiniProgramPath(payload.link)) {
         return {error: '广告链接必须是小程序页面路径，例如 /pages/coupon-center/index'};
       }
+    }
+
+    if (payload.placement === 1) {
+      payload.image_url = payload.banner_image_url;
+    } else if (payload.placement === 2) {
+      payload.image_url = payload.popup_image_url;
+    } else {
+      payload.image_url = payload.banner_image_url || payload.popup_image_url;
+    }
+    if (!payload.image_url) {
+      return {error: '广告图片不能为空'};
     }
     return {payload};
   }
@@ -155,6 +181,9 @@ module.exports = class extends Base {
     }
     data.placement = this.normalizePlacement(data.placement);
     data.title = String(data.title || '');
+    data.image_url = String(data.image_url || '');
+    data.banner_image_url = String(data.banner_image_url || data.image_url || '');
+    data.popup_image_url = String(data.popup_image_url || data.image_url || '');
     data.start_time = Number(data.start_time || 0);
     data.end_time = Number(data.end_time || 0);
     return this.success(data);

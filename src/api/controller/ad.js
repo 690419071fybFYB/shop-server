@@ -61,6 +61,30 @@ module.exports = class extends Base {
         a.id,
         a.title,
         a.image_url,
+        IFNULL(a.popup_image_url, '') AS popup_image_url,
+        a.link_type,
+        a.goods_id,
+        a.link,
+        IFNULL(a.start_time, 0) AS start_time,
+        IFNULL(a.end_time, 0) AS end_time,
+        IFNULL(a.sort_order, 0) AS sort_order,
+        r.id AS read_id
+      FROM hiolabs_ad a
+      LEFT JOIN hiolabs_user_ad_read r
+        ON r.ad_id = a.id AND r.user_id = ${uid}
+      WHERE a.is_delete = 0
+        AND a.enabled = 1
+        AND a.placement IN (2, 3)
+        AND IFNULL(a.start_time, 0) <= ${nowTs}
+      ORDER BY a.start_time DESC, a.id DESC
+      LIMIT ${offset}, ${size}
+    `;
+    const listSqlFallback = `
+      SELECT
+        a.id,
+        a.title,
+        a.image_url,
+        '' AS popup_image_url,
         a.link_type,
         a.goods_id,
         a.link,
@@ -87,14 +111,14 @@ module.exports = class extends Base {
         AND IFNULL(a.start_time, 0) <= ${nowTs}
     `;
     const [listRows, countRows] = await Promise.all([
-      this.model('ad').query(listSql),
+      this.model('ad').query(listSql).catch(() => this.model('ad').query(listSqlFallback)),
       this.model('ad').query(countSql)
     ]);
     const total = this.normalizeCountRow(countRows && countRows[0]);
     const list = (listRows || []).map((item) => ({
       id: Number(item.id || 0),
       title: String(item.title || ''),
-      image_url: String(item.image_url || ''),
+      image_url: String(item.popup_image_url || item.image_url || ''),
       link_type: Number(item.link_type || 0),
       goods_id: Number(item.goods_id || 0),
       link: String(item.link || ''),
