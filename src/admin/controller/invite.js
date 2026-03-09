@@ -60,6 +60,7 @@ module.exports = class extends Base {
       enabled: Number(config.enabled || 0),
       reward_coupon_id: couponId,
       daily_limit: Number(config.daily_limit || 10),
+      ignore_per_user_limit: Number(config.ignore_per_user_limit) === 0 ? 0 : 1,
       coupon: couponInfo,
       coupons: couponOptions || []
     });
@@ -69,6 +70,7 @@ module.exports = class extends Base {
     const enabled = Number(this.post('enabled') || 0) === 1 ? 1 : 0;
     const rewardCouponId = Number(this.post('reward_coupon_id') || 0);
     const dailyLimit = Number(this.post('daily_limit') || 10);
+    const ignorePerUserLimit = Number(this.post('ignore_per_user_limit')) === 0 ? 0 : 1;
     if (enabled === 1 && rewardCouponId <= 0) {
       return this.fail(400, '开启活动时必须配置奖励券');
     }
@@ -91,6 +93,7 @@ module.exports = class extends Base {
         enabled,
         reward_coupon_id: rewardCouponId,
         daily_limit: normalizedDailyLimit,
+        ignore_per_user_limit: ignorePerUserLimit,
         add_time: nowTs,
         update_time: nowTs
       });
@@ -99,6 +102,7 @@ module.exports = class extends Base {
         enabled,
         reward_coupon_id: rewardCouponId,
         daily_limit: normalizedDailyLimit,
+        ignore_per_user_limit: ignorePerUserLimit,
         update_time: nowTs
       });
     }

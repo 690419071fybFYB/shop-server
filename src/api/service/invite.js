@@ -148,7 +148,8 @@ module.exports = class extends think.Service {
       return {
         enabled: 0,
         reward_coupon_id: 0,
-        daily_limit: DEFAULT_DAILY_LIMIT
+        daily_limit: DEFAULT_DAILY_LIMIT,
+        ignore_per_user_limit: 1
       };
     }
     const row = await this.model('invite_config').where({id: 1}).find();
@@ -158,19 +159,22 @@ module.exports = class extends think.Service {
         enabled: 0,
         reward_coupon_id: 0,
         daily_limit: DEFAULT_DAILY_LIMIT,
+        ignore_per_user_limit: 1,
         add_time: this.now(),
         update_time: this.now()
       });
       return {
         enabled: 0,
         reward_coupon_id: 0,
-        daily_limit: DEFAULT_DAILY_LIMIT
+        daily_limit: DEFAULT_DAILY_LIMIT,
+        ignore_per_user_limit: 1
       };
     }
     return {
       enabled: Number(row.enabled || 0),
       reward_coupon_id: Number(row.reward_coupon_id || 0),
-      daily_limit: Number(row.daily_limit || DEFAULT_DAILY_LIMIT)
+      daily_limit: Number(row.daily_limit || DEFAULT_DAILY_LIMIT),
+      ignore_per_user_limit: Number(row.ignore_per_user_limit) === 0 ? 0 : 1
     };
   }
 
@@ -213,6 +217,7 @@ module.exports = class extends think.Service {
       enabled: config.enabled,
       reward_coupon_id: config.reward_coupon_id,
       daily_limit: config.daily_limit,
+      ignore_per_user_limit: config.ignore_per_user_limit,
       total_invite_count: totalInviteCount,
       total_reward_count: totalRewardCount,
       today_invite_count: todayInviteCount,
@@ -361,10 +366,11 @@ module.exports = class extends think.Service {
     }
 
     const couponService = this.service('coupon', 'api');
+    const ignorePerUserLimit = Number(config.ignore_per_user_limit) === 0 ? 0 : 1;
     try {
       const rewardResult = await couponService.receiveCoupon(inviterUserId, Number(config.reward_coupon_id), {
         allowMultiple: true,
-        ignorePerUserLimit: true,
+        ignorePerUserLimit: ignorePerUserLimit === 1,
         skipSegmentCheck: true
       });
       await this.model('invite_relation').where(relationWhere).update({

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS `hiolabs_invite_config` (
   `enabled` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否开启拉新活动',
   `reward_coupon_id` int unsigned NOT NULL DEFAULT '0' COMMENT '奖励券模板ID',
   `daily_limit` int unsigned NOT NULL DEFAULT '10' COMMENT '单邀请人每日奖励上限',
+  `ignore_per_user_limit` tinyint(1) NOT NULL DEFAULT '1' COMMENT '拉新发券是否忽略每人限领',
   `add_time` int NOT NULL DEFAULT '0',
   `update_time` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`)
@@ -31,6 +32,13 @@ CREATE TABLE IF NOT EXISTS `hiolabs_invite_relation` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'hiolabs_invite_config' AND COLUMN_NAME = 'ignore_per_user_limit') = 0,
+  "ALTER TABLE `hiolabs_invite_config` ADD COLUMN `ignore_per_user_limit` tinyint(1) NOT NULL DEFAULT '1' COMMENT '拉新发券是否忽略每人限领' AFTER `daily_limit`",
+  'SELECT 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
   (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'hiolabs_user' AND COLUMN_NAME = 'invite_code') = 0,
   "ALTER TABLE `hiolabs_user` ADD COLUMN `invite_code` varchar(24) DEFAULT NULL COMMENT '拉新邀请码' AFTER `avatar`",
   'SELECT 1'
@@ -48,8 +56,8 @@ SET @sql := IF(
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-INSERT INTO `hiolabs_invite_config` (`id`,`enabled`,`reward_coupon_id`,`daily_limit`,`add_time`,`update_time`)
-SELECT 1,0,0,10,UNIX_TIMESTAMP(),UNIX_TIMESTAMP()
+INSERT INTO `hiolabs_invite_config` (`id`,`enabled`,`reward_coupon_id`,`daily_limit`,`ignore_per_user_limit`,`add_time`,`update_time`)
+SELECT 1,0,0,10,1,UNIX_TIMESTAMP(),UNIX_TIMESTAMP()
 WHERE NOT EXISTS (SELECT 1 FROM `hiolabs_invite_config` WHERE id = 1);
 
 SET @menu_settings_id := (
