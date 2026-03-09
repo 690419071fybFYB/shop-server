@@ -1,5 +1,8 @@
 const Base = require('./base.js');
 const moment = require('moment');
+const fs = require('fs');
+const path = require('path');
+const mime = require('mime-types');
 
 module.exports = class extends Base {
 	async checkLoginAction(){
@@ -35,6 +38,51 @@ module.exports = class extends Base {
             domain: data.domain         // 访问域名
         };
         return this.success(info);
+    }
+    async uploadImageAction() {
+        const file = this.file('file');
+        if (think.isEmpty(file) || !file.path) {
+            return this.fail(400, '请上传广告图片');
+        }
+
+        const maxBytes = 5 * 1024 * 1024;
+        const size = Number(file.size || 0);
+        if (size <= 0) {
+            return this.fail(400, '上传文件为空');
+        }
+        if (size > maxBytes) {
+            return this.fail(400, '图片过大，最大支持5MB');
+        }
+
+        const originName = String(file.name || file.originalFilename || '');
+        const ext = path.extname(originName).toLowerCase();
+        const allowedExt = ['.jpg', '.jpeg', '.png', '.webp'];
+        if (ext && allowedExt.indexOf(ext) === -1) {
+            return this.fail(400, '仅支持 jpg/png/webp 图片');
+        }
+
+        const contentType = String(file.type || mime.lookup(ext) || '').toLowerCase();
+        if (contentType && !contentType.startsWith('image/')) {
+            return this.fail(400, '仅支持图片文件');
+        }
+
+        try {
+            const cosService = this.service('cos');
+            const key = `${think.uuid(32)}${ext || ''}`;
+            const body = fs.readFileSync(file.path);
+            await cosService.putObject(key, body, contentType || 'application/octet-stream');
+            return this.success({
+                key,
+                url: cosService.buildUrl(key)
+            });
+        } catch (error) {
+            console.error('上传广告图片失败:', error);
+            return this.fail(500, '上传广告图片失败');
+        } finally {
+            if (file.path) {
+                fs.unlink(file.path, () => {});
+            }
+        }
     }
     async mainAction() {
         const index = this.get('pindex');
