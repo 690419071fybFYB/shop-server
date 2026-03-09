@@ -28,6 +28,9 @@ module.exports = [{
     handle: 'payload',
     options: {}
 }, {
+    handle: 'api_error_guard',
+    options: {}
+}, {
     handle: 'router',
     options: {
         defaultModule: 'api',

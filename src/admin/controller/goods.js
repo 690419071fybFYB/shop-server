@@ -442,7 +442,6 @@ module.exports = class extends Base {
             }).update({
                 goods_number: goodsSum
             });
-            await think.timeout(2000);
         }
         return this.success();
     }
@@ -675,6 +674,12 @@ module.exports = class extends Base {
             }
             return this.success(data);
         }
+        return this.success({
+            count: 0,
+            totalPages: 0,
+            currentPage: Number(page) || 1,
+            data: []
+        });
     }
     async saleStatusAction() {
         const id = this.get('id');
@@ -695,6 +700,7 @@ module.exports = class extends Base {
             is_on_sale: sale,
             checked: sale
         });
+        return this.success();
     }
     async productStatusAction() {
         const id = this.get('id');
@@ -712,6 +718,7 @@ module.exports = class extends Base {
 		}).update({
 			is_on_sale: status
 		})
+        return this.success();
     }
     async indexShowStatusAction() {
         const id = this.get('id');
@@ -726,6 +733,7 @@ module.exports = class extends Base {
         }).update({
             is_index: stat
         });
+        return this.success();
     }
     async infoAction() {
         const id = this.get('id');

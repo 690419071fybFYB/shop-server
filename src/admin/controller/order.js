@@ -167,6 +167,7 @@ module.exports = class extends Base {
             });
             return this.success(order_sn);
         }
+        return this.fail(400, 'addOrMinus 参数错误');
     }
     async goodsListDeleteAction() {
         console.log(this.post('id'));

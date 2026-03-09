@@ -4,10 +4,14 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const ExcelJS = require('exceljs');
+const jwt = require('jsonwebtoken');
 
 const BASE_URL = process.env.HIOSHOP_ADMIN_API || 'http://127.0.0.1:8360/admin';
+const API_BASE_URL = process.env.HIOSHOP_API_BASE || BASE_URL.replace(/\/admin\/?$/, '/api');
 const ADMIN_USERNAME = process.env.HIOSHOP_ADMIN_USER || 'qilelab.com';
 const ADMIN_PASSWORD = process.env.HIOSHOP_ADMIN_PASS || 'qilelab.com';
+const API_TOKEN_SECRET = process.env.API_TOKEN_SECRET || process.env.API_JWT_SECRET || '';
+const API_USER_ID = Number(process.env.COUPON_TEST_USER_ID || process.env.TEST_API_USER_ID || 1048);
 const POLL_INTERVAL_MS = Number(process.env.HIOSHOP_IMPORT_POLL_MS || 2000);
 const POLL_MAX_RETRY = Number(process.env.HIOSHOP_IMPORT_POLL_MAX_RETRY || 60);
 
@@ -195,15 +199,48 @@ async function getTaskDetail(token, taskId) {
   return payload.data;
 }
 
-async function waitTaskDone(token, taskId) {
+function buildApiToken() {
+  if (!API_TOKEN_SECRET) {
+    return '';
+  }
+  return jwt.sign({user_id: Number(API_USER_ID)}, API_TOKEN_SECRET);
+}
+
+async function triggerProcessTask(apiToken) {
+  if (!apiToken) {
+    return {ok: false, detail: 'missing_api_token'};
+  }
+  const {payload} = await requestJson(`${API_BASE_URL}/crontab/processGoodsImportTask`, {
+    method: 'GET',
+    headers: {
+      'X-Hioshop-Token': apiToken
+    }
+  });
+  const errno = Number(payload && payload.errno);
+  if (errno !== 0) {
+    return {ok: false, detail: `errno=${errno}, errmsg=${payload.errmsg || ''}`};
+  }
+  return {ok: true, detail: JSON.stringify(payload.data || {})};
+}
+
+async function waitTaskDone(token, taskId, apiToken) {
+  let lastStatus = 'unknown';
+  let lastProcessDetail = 'not-triggered';
   for (let i = 0; i < POLL_MAX_RETRY; i++) {
+    try {
+      const processResult = await triggerProcessTask(apiToken);
+      lastProcessDetail = processResult.detail;
+    } catch (err) {
+      lastProcessDetail = `process_error=${err.message || err}`;
+    }
     const detail = await getTaskDetail(token, taskId);
+    lastStatus = String(detail && detail.status || 'unknown');
     if (FINAL_STATUS.has(detail.status)) {
       return detail;
     }
     await sleep(POLL_INTERVAL_MS);
   }
-  throw new Error(`任务轮询超时(taskId=${taskId})`);
+  throw new Error(`任务轮询超时(taskId=${taskId}, lastStatus=${lastStatus}, processor=${lastProcessDetail})`);
 }
 
 async function downloadTemplateAndCheck(token, tempDir) {
@@ -254,6 +291,7 @@ async function run() {
 
   try {
     const token = await login();
+    const apiToken = buildApiToken();
     pushResult('登录', 'PASS', `user=${ADMIN_USERNAME}`);
 
     // 路由和表可用性探测
@@ -315,7 +353,7 @@ async function run() {
       ]]
     );
     const validateTaskId = await createImportTask(token, validateFile, 'validate_only');
-    const validateTask = await waitTaskDone(token, validateTaskId);
+    const validateTask = await waitTaskDone(token, validateTaskId, apiToken);
     assert(validateTask.status === 'success', `validate_only 任务状态异常: ${validateTask.status}`);
     assert(Number(validateTask.total_sku) === 1, `validate_only total_sku 预期1，实际${validateTask.total_sku}`);
     assert(Number(validateTask.failed_sku) === 0, `validate_only failed_sku 预期0，实际${validateTask.failed_sku}`);
@@ -359,7 +397,7 @@ async function run() {
       ]]
     );
     const importTaskId = await createImportTask(token, importFile, 'import');
-    const importTask = await waitTaskDone(token, importTaskId);
+    const importTask = await waitTaskDone(token, importTaskId, apiToken);
     assert(importTask.status === 'success', `import 任务状态异常: ${importTask.status}`);
     assert(Number(importTask.success_sku) === 1, `import success_sku 预期1，实际${importTask.success_sku}`);
     assert(Number(importTask.failed_sku) === 0, `import failed_sku 预期0，实际${importTask.failed_sku}`);
@@ -402,7 +440,7 @@ async function run() {
       ]]
     );
     const dupTaskId = await createImportTask(token, dupFile, 'import');
-    const dupTask = await waitTaskDone(token, dupTaskId);
+    const dupTask = await waitTaskDone(token, dupTaskId, apiToken);
     assert(dupTask.status === 'partial_success', `重复 SKU 任务状态异常: ${dupTask.status}`);
     assert(Number(dupTask.skipped_sku) >= 1, `重复 SKU skipped_sku 预期>=1，实际${dupTask.skipped_sku}`);
     pushResult('重复SKU跳过', 'PASS', `taskId=${dupTaskId}`);

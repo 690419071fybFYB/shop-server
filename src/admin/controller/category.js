@@ -111,6 +111,7 @@ module.exports = class extends Base {
         }).update({
             is_show: ele
         });
+        return this.success();
     }
     async channelStatusAction() {
         const id = this.get('id');
@@ -125,6 +126,7 @@ module.exports = class extends Base {
         }).update({
             is_channel: stat
         });
+        return this.success();
     }
     async categoryStatusAction() {
         const id = this.get('id');
@@ -139,6 +141,7 @@ module.exports = class extends Base {
         }).update({
             is_category: stat
         });
+        return this.success();
     }
     async deleteBannerImageAction() {
         let id = this.post('id');

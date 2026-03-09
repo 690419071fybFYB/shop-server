@@ -88,6 +88,7 @@ module.exports = class extends Base {
         } catch (err) {
             think.logger && think.logger.warn && think.logger.warn(`[crontab.releaseExpiredSeckillLocksBatch] ${err.message || err}`);
         }
+        return this.success();
     }
     async resetSqlAction() {
         let time = parseInt(new Date().getTime() / 1000 + 300);
@@ -95,8 +96,10 @@ module.exports = class extends Base {
         if(info.reset == 0){
             await this.model('settings').where({id:1}).update({countdown:time,reset:1});
             console.log('重置了！');
+            return this.success({ reset: 1 });
         }
         console.log('还没到呢！');
+        return this.success({ reset: Number(info.reset || 0) });
     }
     async processGoodsImportTaskAction() {
         try {

@@ -2,8 +2,9 @@ const Base = require('./base.js');
 // const view = require('think-view');
 module.exports = class extends Base {
     async indexAction() {
-        //auto render template file index_index.html
-        return this.display();
+        return this.success({
+            message: 'ok'
+        });
     }
     async appInfoAction() {
         const nowTs = this.getTime();

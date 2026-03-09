@@ -6,7 +6,6 @@ module.exports = class extends Base {
      */
     // 测试时付款，将真实接口注释。 在小程序的services/pay.js中按照提示注释和打开
     async preWeixinPayaAction() {
-        this.ctx.status = 404;
         return this.fail(404, '接口不存在');
     }
     // 真实的付款接口

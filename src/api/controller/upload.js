@@ -140,15 +140,7 @@ module.exports = class extends Base {
     }
   }
 
-  // async deleteFileAction() {
-  //     const url = this.post('para');
-  //     let newUrl = url.lastIndexOf("/");
-  //     let fileName = url.substring(newUrl + 1);
-  //     let delePath = './www/static/upload/goods/detail/' + fileName;
-  //     fs.unlink(delePath, function (err) {
-  //         if (err) throw err;
-  //         return false;
-  //     });
-  //     return this.success('文件删除成功');
-  // }
+  async deleteFileAction() {
+    return this.fail(404, '接口不存在');
+  }
 };

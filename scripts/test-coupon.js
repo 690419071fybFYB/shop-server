@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 const assert = require('assert');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const mysql = require('mysql2/promise');
 
@@ -7,12 +8,15 @@ const ADMIN_SECRET = process.env.ADMIN_TOKEN_SECRET || 'SLDLKKDS323ssdd@#@@gf';
 const API_SECRET = process.env.API_TOKEN_SECRET || 'sdfsdfsdf123123!ASDasdasdasdasda';
 const BASE_URL = process.env.COUPON_TEST_BASE_URL || 'http://127.0.0.1:8360';
 const ADMIN_USER_ID = Number(process.env.COUPON_TEST_ADMIN_USER_ID || 14);
-const USER_ID = Number(process.env.COUPON_TEST_USER_ID || 1);
+const USER_ID = Number(process.env.COUPON_TEST_USER_ID || 1048);
 const DB_HOST = process.env.COUPON_TEST_DB_HOST || '127.0.0.1';
 const DB_PORT = Number(process.env.COUPON_TEST_DB_PORT || 3306);
 const DB_USER = process.env.COUPON_TEST_DB_USER || 'root';
-const DB_PASSWORD = process.env.COUPON_TEST_DB_PASSWORD || 'CHANGE_ME_STRONG_PASSWORD';
+const DB_PASSWORD = process.env.COUPON_TEST_DB_PASSWORD || process.env.MYSQL_ROOT_PASSWORD || 'CHANGE_ME_STRONG_PASSWORD';
 const DB_NAME = process.env.COUPON_TEST_DB_NAME || 'hiolabsDB';
+const WEIXIN_PARTNER_KEY = process.env.WEIXIN_PARTNER_KEY || '';
+const WEIXIN_APPID = process.env.WEIXIN_APPID || '';
+const WEIXIN_MCH_ID = process.env.WEIXIN_MCH_ID || '';
 
 function nowTs() {
   return Math.floor(Date.now() / 1000);
@@ -180,6 +184,66 @@ async function submitOrder(apiToken, payload) {
   return Number(data.orderInfo.id);
 }
 
+function buildWxSign(payload) {
+  const pairs = Object.keys(payload || {})
+    .filter((k) => k !== 'sign' && payload[k] !== undefined && payload[k] !== null && String(payload[k]) !== '')
+    .sort()
+    .map((k) => `${k}=${String(payload[k])}`);
+  const source = `${pairs.join('&')}&key=${WEIXIN_PARTNER_KEY}`;
+  return crypto.createHash('md5').update(source).digest('hex').toUpperCase();
+}
+
+function buildNotifyPayload(orderSn, totalFee) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const timeEnd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const payload = {
+    return_code: 'SUCCESS',
+    result_code: 'SUCCESS',
+    nonce_str: `coupon_notify_${Date.now()}`,
+    out_trade_no: String(orderSn),
+    transaction_id: `mock_tx_${Date.now()}`,
+    total_fee: String(Math.max(1, Number(totalFee || 1))),
+    time_end: timeEnd
+  };
+  if (WEIXIN_APPID) payload.appid = WEIXIN_APPID;
+  if (WEIXIN_MCH_ID) payload.mch_id = WEIXIN_MCH_ID;
+  payload.sign = buildWxSign(payload);
+  const xml = {};
+  Object.keys(payload).forEach((k) => {
+    xml[k] = [String(payload[k])];
+  });
+  return {xml};
+}
+
+async function notifyPaid(apiToken, orderSn, actualPrice) {
+  const body = buildNotifyPayload(orderSn, Math.round(Number(actualPrice || 0) * 100));
+  const url = new URL('/api/pay/notify', BASE_URL);
+  const headers = {'Content-Type': 'application/json'};
+  if (apiToken) {
+    headers['X-Hioshop-Token'] = apiToken;
+  }
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body)
+  });
+  const text = (await response.text()).trim();
+  if (['SUCCESS', 'OK', '"SUCCESS"', '"OK"'].includes(text)) {
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`notify 非预期响应: ${text.slice(0, 200)}`);
+  }
+  if (parsed === 'SUCCESS' || parsed === 'OK' || Number(parsed.errno) === 0) {
+    return;
+  }
+  throw new Error(`notify 失败: ${text.slice(0, 200)}`);
+}
+
 async function getUserCouponRow(conn, userCouponId) {
   const [rows] = await conn.query(`
     SELECT id, coupon_id, user_id, status, lock_order_id, used_order_id, discount_amount
@@ -187,6 +251,16 @@ async function getUserCouponRow(conn, userCouponId) {
     WHERE id = ?
   `, [Number(userCouponId)]);
   assert(rows.length === 1, `user_coupon 不存在: ${userCouponId}`);
+  return rows[0];
+}
+
+async function getOrderRow(conn, orderId) {
+  const [rows] = await conn.query(`
+    SELECT id, order_sn, actual_price
+    FROM hiolabs_order
+    WHERE id = ?
+  `, [Number(orderId)]);
+  assert(rows.length === 1, `order 不存在: ${orderId}`);
   return rows[0];
 }
 
@@ -254,11 +328,8 @@ async function main() {
       offlinePay: 0,
       selectedUserCouponIds: [fullReductionUserCouponId]
     });
-    await requestApi('/api/pay/preWeixinPaya', {
-      method: 'GET',
-      token: apiToken,
-      query: {orderId: paidOrderId}
-    });
+    const paidOrder = await getOrderRow(conn, paidOrderId);
+    await notifyPaid(apiToken, paidOrder.order_sn, paidOrder.actual_price);
     row = await getUserCouponRow(conn, fullReductionUserCouponId);
     assert(row.status === 'used', '支付后券应为 used');
     assert(Number(row.used_order_id) === paidOrderId, 'used_order_id 应等于已支付订单ID');

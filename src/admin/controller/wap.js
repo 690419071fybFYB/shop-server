@@ -245,6 +245,12 @@ module.exports = class extends Base {
             }
             return this.success(data);
         }
+        return this.success({
+            count: 0,
+            totalPages: 0,
+            currentPage: Number(page) || 1,
+            data: []
+        });
     }
     async saleStatusAction() {
         const id = this.get('id');
