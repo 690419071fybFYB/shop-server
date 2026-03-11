@@ -1,12 +1,64 @@
 const Base = require('./base.js');
 const moment = require('moment');
 const httpClient = require('../../common/utils/http');
-const fs = require('fs');
-const http = require("http");
 module.exports = class extends Base {
     parseSelectedCouponIds(value) {
         const couponService = this.service('coupon', 'api');
         return couponService.normalizeIdList(value);
+    }
+
+    requireUserIdOrAbort() {
+        const userId = this.requireLoginUserId();
+        return userId > 0 ? userId : 0;
+    }
+
+    getCurrentUnixTime() {
+        return Math.floor(Date.now() / 1000);
+    }
+
+    decodeBase64Text(value) {
+        return Buffer.from(String(value || ''), 'base64').toString();
+    }
+
+    formatNullableUnixTime(value) {
+        if (think.isEmpty(value)) {
+            return 0;
+        }
+        return moment.unix(value).format('YYYY-MM-DD HH:mm:ss');
+    }
+
+    sumGoodsCount(goodsList = []) {
+        return (Array.isArray(goodsList) ? goodsList : []).reduce((sum, goods) => {
+            return sum + Number(goods.number || 0);
+        }, 0);
+    }
+
+    buildOrderPrintInfo(pricedGoodsList = []) {
+        const list = Array.isArray(pricedGoodsList) ? pricedGoodsList : [];
+        if (list.length === 0) {
+            return '';
+        }
+        const segments = list.map((item, index) => `${index + 1}、${item.goods_aka}【${item.number}】`);
+        return `${segments.join(' ')} `;
+    }
+
+    async ensureOwnedOrder(orderId, userId, {allowDeleted = false} = {}) {
+        const orderInfo = await this.model('order').field('id,user_id,is_delete,order_status,order_type').where({
+            id: orderId
+        }).find();
+        if (think.isEmpty(orderInfo)) {
+            this.fail(404, '订单不存在');
+            return null;
+        }
+        if (Number(orderInfo.user_id) !== Number(userId)) {
+            this.failForbidden('无权限访问该订单');
+            return null;
+        }
+        if (!allowDeleted && Number(orderInfo.is_delete) === 1) {
+            this.fail(404, '订单不存在');
+            return null;
+        }
+        return orderInfo;
     }
     /**
      * 获取订单列表
@@ -55,7 +107,7 @@ module.exports = class extends Base {
     //
     async countAction() {
         const showType = this.get('showType');
-		const userId = this.getLoginUserId();;
+		const userId = this.getLoginUserId();
         let status = [];
         status = await this.model('order').getOrderStatus(showType);
         let is_delete = 0;
@@ -103,14 +155,17 @@ module.exports = class extends Base {
     }
     async detailAction() {
         const orderId = this.get('orderId');
-		const userId = this.getLoginUserId();;
+		const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
+        }
         const orderInfo = await this.model('order').where({
             user_id: userId,
             id: orderId
         }).find();
-        const currentTime = parseInt(new Date().getTime() / 1000);
+        const currentTime = this.getCurrentUnixTime();
         if (think.isEmpty(orderInfo)) {
-            return this.fail('订单不存在');
+            return this.fail(404, '订单不存在');
         }
         orderInfo.province_name = await this.model('region').where({
             id: orderInfo.province
@@ -122,32 +177,24 @@ module.exports = class extends Base {
             id: orderInfo.district
         }).getField('name', true);
         orderInfo.full_region = orderInfo.province_name + orderInfo.city_name + orderInfo.district_name;
-        orderInfo.postscript = Buffer.from(orderInfo.postscript, 'base64').toString();
+        orderInfo.postscript = this.decodeBase64Text(orderInfo.postscript);
         const orderGoods = await this.model('order_goods').where({
             user_id: userId,
             order_id: orderId,
             is_delete: 0
         }).select();
-        var goodsCount = 0;
-        for (const gitem of orderGoods) {
-            goodsCount += gitem.number;
-        }
+        const goodsCount = this.sumGoodsCount(orderGoods);
         // 订单状态的处理
         orderInfo.order_status_text = await this.model('order').getOrderStatusText(orderId);
-        if (think.isEmpty(orderInfo.confirm_time)) {
-            orderInfo.confirm_time = 0;
-        } else orderInfo.confirm_time = moment.unix(orderInfo.confirm_time).format('YYYY-MM-DD HH:mm:ss');
-        if (think.isEmpty(orderInfo.dealdone_time)) {
-            orderInfo.dealdone_time = 0;
-        } else orderInfo.dealdone_time = moment.unix(orderInfo.dealdone_time).format('YYYY-MM-DD HH:mm:ss');
-        if (think.isEmpty(orderInfo.pay_time)) {
-            orderInfo.pay_time = 0;
-        } else orderInfo.pay_time = moment.unix(orderInfo.pay_time).format('YYYY-MM-DD HH:mm:ss');
+        orderInfo.confirm_time = this.formatNullableUnixTime(orderInfo.confirm_time);
+        orderInfo.dealdone_time = this.formatNullableUnixTime(orderInfo.dealdone_time);
+        orderInfo.pay_time = this.formatNullableUnixTime(orderInfo.pay_time);
         if (think.isEmpty(orderInfo.shipping_time)) {
             orderInfo.shipping_time = 0;
         } else {
-            orderInfo.confirm_remainTime = orderInfo.shipping_time + 10 * 24 * 60 * 60;
-            orderInfo.shipping_time = moment.unix(orderInfo.shipping_time).format('YYYY-MM-DD HH:mm:ss');
+            const shippingTime = Number(orderInfo.shipping_time || 0);
+            orderInfo.confirm_remainTime = shippingTime + 10 * 24 * 60 * 60;
+            orderInfo.shipping_time = moment.unix(shippingTime).format('YYYY-MM-DD HH:mm:ss');
         }
         // 订单支付倒计时
         if (orderInfo.order_status === 101 || orderInfo.order_status === 801) {
@@ -155,7 +202,7 @@ module.exports = class extends Base {
             orderInfo.final_pay_time = orderInfo.add_time + 24 * 60 * 60; //支付倒计时2小时
             if (orderInfo.final_pay_time < currentTime) {
                 //超过时间不支付，更新订单状态为取消
-                let updateInfo = {
+                const updateInfo = {
                     order_status: 102
                 };
                 await this.model('order').where({
@@ -183,7 +230,10 @@ module.exports = class extends Base {
      * @return {Promise} []
      */
     async orderGoodsAction() {
-		const userId = this.getLoginUserId();;
+		const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
+        }
         const orderId = this.get('orderId');
         if (orderId > 0) {
             const orderGoods = await this.model('order_goods').where({
@@ -191,10 +241,6 @@ module.exports = class extends Base {
                 order_id: orderId,
                 is_delete: 0
             }).select();
-            var goodsCount = 0;
-            for (const gitem of orderGoods) {
-                goodsCount += gitem.number;
-            }
             return this.success(orderGoods);
         } else {
             const cartList = await this.model('cart').where({
@@ -212,24 +258,24 @@ module.exports = class extends Base {
      */
     async cancelAction() {
         const orderId = this.post('orderId');
-		const userId = this.getLoginUserId();;
-        if (userId <= 0) {
-            return this.fail(401, '请先登录');
+		const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
+        }
+        const orderInfo = await this.ensureOwnedOrder(orderId, userId);
+        if (!orderInfo) {
+            return;
         }
         // 检测是否能够取消
         const handleOption = await this.model('order').getOrderHandleOption(orderId, userId);
         // console.log('--------------' + handleOption.cancel);
         if (!handleOption.cancel) {
-            return this.fail('订单不能取消');
+            return this.fail(400, '订单不能取消');
         }
         // 设置订单已取消状态
         let updateInfo = {
             order_status: 102
         };
-        let orderInfo = await this.model('order').field('order_type').where({
-            id: orderId,
-            user_id: userId
-        }).find();
         //取消订单，还原库存
         const goodsInfo = await this.model('order_goods').where({
             order_id: orderId,
@@ -263,14 +309,18 @@ module.exports = class extends Base {
      */
     async deleteAction() {
         const orderId = this.post('orderId');
-        const userId = this.getLoginUserId();
-        if (userId <= 0) {
-            return this.fail(401, '请先登录');
+        const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
+        }
+        const orderInfo = await this.ensureOwnedOrder(orderId, userId, {allowDeleted: true});
+        if (!orderInfo) {
+            return;
         }
         // 检测是否能够取消
         const handleOption = await this.model('order').getOrderHandleOption(orderId, userId);
         if (!handleOption.delete) {
-            return this.fail('订单不能删除');
+            return this.fail(400, '订单不能删除');
         }
         const succesInfo = await this.model('order').orderDeleteById(orderId, userId);
         if (!succesInfo) {
@@ -284,18 +334,22 @@ module.exports = class extends Base {
      */
     async confirmAction() {
         const orderId = this.post('orderId');
-        const userId = this.getLoginUserId();
-        if (userId <= 0) {
-            return this.fail(401, '请先登录');
+        const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
+        }
+        const orderInfo = await this.ensureOwnedOrder(orderId, userId);
+        if (!orderInfo) {
+            return;
         }
         // 检测是否能够取消
         const handleOption = await this.model('order').getOrderHandleOption(orderId, userId);
         if (!handleOption.confirm) {
-            return this.fail('订单不能确认');
+            return this.fail(400, '订单不能确认');
         }
         // 设置订单已取消状态
-        const currentTime = parseInt(new Date().getTime() / 1000);
-        let updateInfo = {
+        const currentTime = this.getCurrentUnixTime();
+        const updateInfo = {
             order_status: 401,
             confirm_time: currentTime
         };
@@ -314,21 +368,17 @@ module.exports = class extends Base {
      */
     async completeAction() {
         const orderId = this.get('orderId');
-        const userId = this.getLoginUserId();
-        if (userId <= 0) {
-            return this.fail(401, '请先登录');
+        const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
         }
-        const orderInfo = await this.model('order').where({
-            id: orderId,
-            user_id: userId,
-            is_delete: 0
-        }).find();
+        const orderInfo = await this.ensureOwnedOrder(orderId, userId);
         if (think.isEmpty(orderInfo)) {
-            return this.fail(404, '订单不存在');
+            return;
         }
         // 设置订单已完成
-        const currentTime = parseInt(new Date().getTime() / 1000);
-        let updateInfo = {
+        const currentTime = this.getCurrentUnixTime();
+        const updateInfo = {
             order_status: 401,
             dealdone_time: currentTime
         };
@@ -344,15 +394,19 @@ module.exports = class extends Base {
      */
     async submitAction() {
         // 获取收货地址信息和计算运费
-		const userId = this.getLoginUserId();;
+		const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
+        }
         const addressId = this.post('addressId');
         const freightPrice = Number(this.post('freightPrice') || 0);
         const offlinePay = Number(this.post('offlinePay') || 0);
         const selectedUserCouponIds = this.parseSelectedCouponIds(this.post('selectedUserCouponIds') || []);
-        let postscript = this.post('postscript');
+        const postscript = String(this.post('postscript') || '');
         const buffer = Buffer.from(postscript); // 留言
         const checkedAddress = await this.model('address').where({
-            id: addressId
+            id: addressId,
+            user_id: userId
         }).find();
         if (think.isEmpty(checkedAddress)) {
             return this.fail('请选择收货地址');
@@ -368,14 +422,14 @@ module.exports = class extends Base {
         }
         let checkPrice = 0;
         let checkStock = 0;
-        for(const item of checkedGoodsList){
-            let product = await this.model('product').where({
+        for (const item of checkedGoodsList) {
+            const product = await this.model('product').where({
                 id:item.product_id
             }).find();
-            if(item.number > product.goods_number){
+            if (think.isEmpty(product) || item.number > product.goods_number) {
                 checkStock++;
             }
-            if(item.retail_price != item.add_price){
+            if (item.retail_price != item.add_price) {
                 checkPrice++;
             }
         }
@@ -415,12 +469,8 @@ module.exports = class extends Base {
         const couponPrice = Number(couponPreview.couponPrice || 0);
         const totalPromotionPrice = Math.max(0, promotionPrice + couponPrice);
         const actualPrice = Math.max(0, Number(couponPreview.actualPrice || orderTotalPrice)); // 减去其它支付的金额后，要实际支付的金额 比如满减等优惠
-        const currentTime = parseInt(new Date().getTime() / 1000);
-        let print_info = '';
-        for (const item in pricedGoodsList) {
-            let i = Number(item) + 1;
-            print_info = print_info + i + '、' + pricedGoodsList[item].goods_aka + '【' + pricedGoodsList[item].number + '】 ';
-        }
+        const currentTime = this.getCurrentUnixTime();
+        const printInfo = this.buildOrderPrintInfo(pricedGoodsList);
 
         const orderInfo = {
             order_sn: this.model('order').generateOrderNumber(),
@@ -444,72 +494,32 @@ module.exports = class extends Base {
             coupon_price: couponPrice,
             promotions_price: Number(totalPromotionPrice.toFixed(2)),
             coupon_detail_json: JSON.stringify(couponPreview.selectedCoupons || []),
-            print_info: print_info,
+            print_info: printInfo,
             offline_pay:offlinePay
         };
-        // 开启事务，插入订单信息和订单商品
-        const transactionModel = this.model('order');
-        await transactionModel.transaction(async () => {
-            const bindModel = (name) => {
-                const model = transactionModel.model(name);
-                model.db(transactionModel.db());
-                return model;
-            };
-            const orderModel = bindModel('order');
-            const orderGoodsModel = bindModel('order_goods');
-            const orderId = await orderModel.add(orderInfo);
-            orderInfo.id = orderId;
-            if (!orderId) {
-                throw new Error('订单提交失败');
-            }
-            // 将商品信息录入数据库
-            const orderGoodsData = [];
-            for (const goodsItem of pricedGoodsList) {
-                const dealUnitPrice = Number(goodsItem.display_price || goodsItem.promotion_price || goodsItem.retail_price || 0);
-                orderGoodsData.push({
-                    user_id: userId,
-                    order_id: orderId,
-                    goods_id: goodsItem.goods_id,
-                    product_id: goodsItem.product_id,
-                    goods_name: goodsItem.goods_name,
-                    goods_aka: goodsItem.goods_aka,
-                    list_pic_url: goodsItem.list_pic_url,
-                    retail_price: Number(dealUnitPrice.toFixed(2)),
-                    number: goodsItem.number,
-                    goods_specifition_name_value: goodsItem.goods_specifition_name_value,
-                    goods_specifition_ids: goodsItem.goods_specifition_ids
-                });
-            }
-            await orderGoodsModel.addMany(orderGoodsData);
-            if ((couponPreview.selectedCoupons || []).length > 0) {
-                await couponService.lockOrConsumeCouponsForOrder({
-                    userId: userId,
-                    orderId: orderId,
-                    selectedCoupons: couponPreview.selectedCoupons,
-                    consumeDirect: offlinePay === 1,
-                    transactionModel
-                });
-            }
+        const orderService = this.service('order', 'api');
+        const persistedOrderInfo = await orderService.createOrderWithItems({
+            orderInfo,
+            pricedGoodsList,
+            userId,
+            selectedCoupons: couponPreview.selectedCoupons || [],
+            consumeCouponDirect: offlinePay === 1
         });
-        await this.model('cart').clearBuyGoods();
+        await this.model('cart').clearBuyGoods(userId);
         return this.success({
-            orderInfo: orderInfo
+            orderInfo: persistedOrderInfo
         });
     }
     async updateAction() {
         const addressId = this.post('addressId');
         const orderId = this.post('orderId');
-        const userId = this.getLoginUserId();
-        if (userId <= 0) {
-            return this.fail(401, '请先登录');
+        const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
         }
-        const currentOrder = await this.model('order').where({
-            id: orderId,
-            user_id: userId,
-            is_delete: 0
-        }).find();
+        const currentOrder = await this.ensureOwnedOrder(orderId, userId);
         if (think.isEmpty(currentOrder)) {
-            return this.fail(404, '订单不存在');
+            return;
         }
         // 备注
         // let postscript = this.post('postscript');
@@ -546,33 +556,26 @@ module.exports = class extends Base {
      * @returns {Promise.<void>}
      */
     async expressAction() {
-        const currentTime = parseInt(new Date().getTime() / 1000);
+        const currentTime = this.getCurrentUnixTime();
         const orderId = this.get('orderId');
-        const userId = this.getLoginUserId();
-        if (userId <= 0) {
-            return this.fail(401, '请先登录');
+        const userId = this.requireUserIdOrAbort();
+        if (!userId) {
+            return;
         }
-        const orderInfo = await this.model('order').where({
-            id: orderId,
-            user_id: userId,
-            is_delete: 0
-        }).find();
+        const orderInfo = await this.ensureOwnedOrder(orderId, userId);
         if (think.isEmpty(orderInfo)) {
-            return this.fail(404, '订单不存在');
-        }
-        let info = await this.model('order_express').where({
-            order_id: orderId
-        }).find();
-        if (think.isEmpty(info)) {
-            return this.fail(400, '暂无物流信息');
+            return;
         }
         const expressInfo = await this.model('order_express').where({
             order_id: orderId
         }).find();
+        if (think.isEmpty(expressInfo)) {
+            return this.fail(400, '暂无物流信息');
+        }
         // 如果is_finish == 1；或者 updateTime 小于 1分钟，
-        let updateTime = info.update_time;
+        let updateTime = expressInfo.update_time;
         let com = (currentTime - updateTime) / 60;
-        let is_finish = info.is_finish;
+        let is_finish = expressInfo.is_finish;
         if (is_finish == 1) {
             return this.success(expressInfo);
         } else if (updateTime != 0 && com < 20) {
@@ -605,10 +608,18 @@ module.exports = class extends Base {
         // return this.success(latestExpressInfo);
     }
     async getExpressInfo(shipperCode, expressNo) {
-			let appCode = "APPCODE "+ think.config('aliexpress.appcode');
+        const aliConfig = think.config('aliexpress') || {};
+        const aliUrl = String(aliConfig.url || '').trim();
+        const aliAppCode = String(aliConfig.appcode || '').trim();
+        if (!aliUrl || !aliAppCode) {
+            throw new Error('[order.getExpressInfo] missing config: aliexpress.url/aliexpress.appcode');
+        }
+        const appCode = `APPCODE ${aliAppCode}`;
+        const queryNo = encodeURIComponent(String(expressNo || ''));
+        const queryType = encodeURIComponent(String(shipperCode || ''));
         const options = {
             method: 'GET',
-            url: 'http://wuliu.market.alicloudapi.com/kdi?no=' + expressNo + '&type=' + shipperCode,
+            url: `${aliUrl}?no=${queryNo}&type=${queryType}`,
             headers: {
                 "Content-Type": "application/json; charset=utf-8",
                 "Authorization": appCode

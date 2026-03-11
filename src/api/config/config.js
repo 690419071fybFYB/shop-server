@@ -20,6 +20,7 @@ module.exports = {
     'cart/update',
     'cart/delete',
     'cart/goodscount',
+    'settings/showsettings',
     'pay/notify'
   ],
 

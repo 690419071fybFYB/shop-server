@@ -1,7 +1,39 @@
 const httpClient = require('../../common/utils/http');
 const _ = require('lodash');
 module.exports = class extends think.Service {
+    getExpressConfig() {
+        const config = think.config('express') || {};
+        return {
+            appid: String(config.appid || '').trim(),
+            appkey: String(config.appkey || '').trim(),
+            request_url: String(config.request_url || '').trim()
+        };
+    }
+    getMianExpressConfig() {
+        const config = think.config('mianexpress') || {};
+        return {
+            appid: String(config.appid || '').trim(),
+            appkey: String(config.appkey || '').trim(),
+            request_url: String(config.request_url || '').trim(),
+            print_url: String(config.print_url || '').trim(),
+            ip_server_url: String(config.ip_server_url || '').trim()
+        };
+    }
+    ensureRequiredConfig(config, requiredKeys = [], scene = 'express') {
+        const missing = (Array.isArray(requiredKeys) ? requiredKeys : [])
+            .map((key) => String(key || '').trim())
+            .filter((key) => key && !config[key]);
+        if (missing.length > 0) {
+            throw new Error(`[${scene}] missing config: ${missing.join(', ')}`);
+        }
+        return config;
+    }
     async queryExpress(shipperCode, logisticCode, orderCode = '') {
+        const expressConfig = this.ensureRequiredConfig(
+            this.getExpressConfig(),
+            ['appid', 'appkey', 'request_url'],
+            'admin.express.queryExpress'
+        );
         // 最终得到的数据，初始化
         let expressInfo = {
             success: false,
@@ -12,14 +44,14 @@ module.exports = class extends think.Service {
             traces: []
         };
         // 要post的数据，进行编码，签名
-        const fromData = this.generateFromData(shipperCode, logisticCode, orderCode);
+        const fromData = this.generateFromData(shipperCode, logisticCode, orderCode, expressConfig);
         if (think.isEmpty(fromData)) {
             return expressInfo;
         }
         // post的参数
         const sendOptions = {
             method: 'POST',
-            url: think.config('express.request_url'),
+            url: expressConfig.request_url,
             headers: {
                 'content-type': 'application/x-www-form-urlencoded;charset=utf-8'
             },
@@ -40,13 +72,13 @@ module.exports = class extends think.Service {
         }
     }
     // 快递物流信息请求系统级参数 要post的数据，进行编码，签名
-    generateFromData(shipperCode, logisticCode, orderCode) {
+    generateFromData(shipperCode, logisticCode, orderCode, expressConfig = this.getExpressConfig()) {
         const requestData = this.generateRequestData(shipperCode, logisticCode, orderCode);
         const fromData = {
             RequestData: encodeURI(requestData), // 把字符串作为 URI 进行编码
-            EBusinessID: think.config('express.appid'), // 客户号
+            EBusinessID: expressConfig.appid, // 客户号
             RequestType: '1002', // 请求代码
-            DataSign: this.generateDataSign(requestData), // 签名
+            DataSign: this.generateDataSign(requestData, expressConfig.appkey), // 签名
             DataType: '2' //数据类型：2
         };
         return fromData;
@@ -62,8 +94,8 @@ module.exports = class extends think.Service {
         return JSON.stringify(requestData);
     }
     // 编码加密
-    generateDataSign(requestData) {
-        return encodeURI(Buffer.from(think.md5(requestData + think.config('express.appkey'))).toString('base64'));
+    generateDataSign(requestData, appKey) {
+        return encodeURI(Buffer.from(think.md5(requestData + appKey)).toString('base64'));
     }
     parseExpressResult(requestResult) {
         const expressInfo = {
@@ -105,17 +137,22 @@ module.exports = class extends think.Service {
     }
     // 电子面单开始
     async mianExpress(data = {}) {
+        const mianExpressConfig = this.ensureRequiredConfig(
+            this.getMianExpressConfig(),
+            ['appid', 'appkey', 'request_url'],
+            'admin.express.mianExpress'
+        );
         // 从前台传过来的数据
         let expressInfo = data;
         // 进行编码，签名
-        const fromData = this.mianFromData(data);
+        const fromData = this.mianFromData(data, mianExpressConfig);
         if (think.isEmpty(fromData)) {
             return expressInfo;
         }
         // 请求的参数设置
         const sendOptions = {
             method: 'POST',
-            url: think.config('mianexpress.request_url'),
+            url: mianExpressConfig.request_url,
             headers: {
                 'content-type': 'application/x-www-form-urlencoded;charset=utf-8'
             },
@@ -136,21 +173,21 @@ module.exports = class extends think.Service {
         }
     }
     // 电子面单信息请求系统级参数 要post的数据 进行编码，签名
-    mianFromData(data) {
+    mianFromData(data, mianExpressConfig = this.getMianExpressConfig()) {
         const requestData = JSON.stringify(data); // data：post进来的 // JavaScript 值转换为 JSON 字符串。
         const fromData = {
             RequestData: encodeURI(requestData),
-            EBusinessID: think.config('mianexpress.appid'),
+            EBusinessID: mianExpressConfig.appid,
             RequestType: '1007',
-            DataSign: this.mianDataSign(requestData),
+            DataSign: this.mianDataSign(requestData, mianExpressConfig.appkey),
             DataType: '2'
         };
         // console.log('fromdata======');
         return fromData;
     }
     // 加密签名
-    mianDataSign(requestData) {
-        return encodeURI(Buffer.from(think.md5(requestData + think.config('mianexpress.appkey'))).toString('base64'));
+    mianDataSign(requestData, appKey) {
+        return encodeURI(Buffer.from(think.md5(requestData + appKey)).toString('base64'));
     }
     // 返回数据
     parseMianExpressResult(requestResult) {
@@ -182,17 +219,22 @@ module.exports = class extends think.Service {
      * 组装POST表单用于调用快递鸟批量打印接口页面
      */
     async buildForm(data = {}) {
+        const mianExpressConfig = this.ensureRequiredConfig(
+            this.getMianExpressConfig(),
+            ['appid', 'appkey', 'print_url', 'ip_server_url'],
+            'admin.express.buildForm'
+        );
         let requestData = data;
         requestData = '[{"OrderCode":"234351215333113311353","PortName":"打印机名称一"}]';
         //OrderCode:需要打印的订单号，和调用快递鸟电子面单的订单号一致，PortName：本地打印机名称，请参考使用手册设置打印机名称。支持多打印机同时打印。
         // $request_data = '[{"OrderCode":"234351215333113311353","PortName":"打印机名称一"},{"OrderCode":"234351215333113311354","PortName":"打印机名称二"}]';
         let requestDataEncode = encodeURI(requestData);
-        let APIKey = think.config('mianexpress.appkey');
-        let API_URL = think.config('mianexpress.print_url');
-        let dataSign = this.printDataSign(this.get_ip(), requestDataEncode);
+        let API_URL = mianExpressConfig.print_url;
+        const clientIp = await this.get_ip();
+        let dataSign = this.printDataSign(clientIp, requestDataEncode, mianExpressConfig.appkey);
         //是否预览，0-不预览 1-预览
         let is_priview = '0';
-        let EBusinessID = think.config('mianexpress.appid');
+        let EBusinessID = mianExpressConfig.appid;
         //组装表单
         console.log('hahaaaaaaaaaa ');
         let form = '<form id="form1" method="POST" action="' + API_URL + '"><input type="text" name="RequestData" value="' + requestData + '"/><input type="text" name="EBusinessID" value="' + EBusinessID + '"/><input type="text" name="DataSign" value="' + dataSign + '"/><input type="text" name="IsPriview" value="' + is_priview + '"/></form><script>form1.submit();</script>';
@@ -200,8 +242,8 @@ module.exports = class extends think.Service {
         return form;
     }
     // 加密签名
-    printDataSign(ip, requestData) {
-        return encodeURI(Buffer.from(ip + think.md5(requestData + think.config('mianexpress.appkey'))).toString('base64'));
+    printDataSign(ip, requestData, appKey) {
+        return encodeURI(Buffer.from(ip + think.md5(requestData + appKey)).toString('base64'));
     }
     /**
      * 判断是否为内网IP
@@ -216,9 +258,14 @@ module.exports = class extends think.Service {
      * @return 客户端IP
      */
     async get_ip() {
+        const mianExpressConfig = this.ensureRequiredConfig(
+            this.getMianExpressConfig(),
+            ['ip_server_url'],
+            'admin.express.get_ip'
+        );
         const sendOptions = {
             method: 'GET',
-            url: think.config('mianexpress.ip_server_url'),
+            url: mianExpressConfig.ip_server_url,
             headers: {
                 'content-type': 'application/x-www-form-urlencoded;charset=utf-8'
             }

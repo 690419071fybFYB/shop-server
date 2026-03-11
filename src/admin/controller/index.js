@@ -6,13 +6,15 @@ const mime = require('mime-types');
 
 module.exports = class extends Base {
 	async checkLoginAction(){
-		if(think.userId == 0){
+		const userId = Number(this.ctx.state.userId || 0);
+		const adminAuth = this.ctx.state.adminAuth || {};
+		if(userId == 0){
 			return this.fail(404,'请登录');
 		}
         return this.success({
-            userId: think.userId,
-            roles: (think.adminAuth && think.adminAuth.role_keys) || [],
-            permissions: (think.adminAuth && think.adminAuth.permissions) || []
+            userId: userId,
+            roles: adminAuth.role_keys || [],
+            permissions: adminAuth.permissions || []
         });
 	}
     async indexAction() {

@@ -1,4 +1,3 @@
-/* eslint-disable no-multi-spaces */
 const Base = require('./base.js');
 const crypto = require("crypto");
 /**

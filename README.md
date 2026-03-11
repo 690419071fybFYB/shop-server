@@ -75,6 +75,21 @@ npm install
 npm start
 ```
 
++ 推荐使用 `.env.local` 管理环境变量（已支持自动加载）
+```
+cp .env.example .env.local
+# 编辑 .env.local，至少设置 API_JWT_SECRET / ADMIN_JWT_SECRET / MYSQL_* / WEIXIN_*
+```
+
++ 常用校验命令
+```
+npm run lint
+npm run compile
+npm run test:security-regression
+npm run test:coupon
+npm run test:auth-context-isolation
+```
+
 如果安装不成功，百度搜索cnpm，用淘宝源代替，替换后，用cnpm i进行安装依赖  
 
 启动后，本地访问 http://127.0.0.1:8360/

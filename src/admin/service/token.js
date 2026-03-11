@@ -13,6 +13,21 @@ module.exports = class extends think.Service {
         const config = this.getSecurityConfig();
         return String(config.adminTokenSecret || '').trim();
     }
+    getLegacyTokenSecrets() {
+        const config = this.getSecurityConfig();
+        const legacy = config.adminTokenLegacySecrets;
+        if (Array.isArray(legacy)) {
+            return legacy.map((item) => String(item || '').trim()).filter(Boolean);
+        }
+        if (typeof legacy === 'string') {
+            return legacy.split(',').map((item) => String(item || '').trim()).filter(Boolean);
+        }
+        return [];
+    }
+    getVerifySecrets() {
+        const merged = [this.getTokenSecret(), ...this.getLegacyTokenSecrets()].filter(Boolean);
+        return [...new Set(merged)];
+    }
     getTokenAlgorithm() {
         const config = this.getSecurityConfig();
         return String(config.tokenAlgorithm || 'HS256').trim() || 'HS256';
@@ -21,16 +36,32 @@ module.exports = class extends think.Service {
         const config = this.getSecurityConfig();
         return config.adminTokenExpiresIn || '12h';
     }
+    getWeixinConfig() {
+        const config = think.config('weixin') || {};
+        return {
+            appid: String(config.appid || '').trim(),
+            secret: String(config.secret || '').trim()
+        };
+    }
+    ensureWeixinConfig(requiredKeys = [], scene = 'admin.token') {
+        const config = this.getWeixinConfig();
+        const missing = (Array.isArray(requiredKeys) ? requiredKeys : [])
+            .map((key) => String(key || '').trim())
+            .filter((key) => key && !config[key]);
+        if (missing.length > 0) {
+            throw new Error(`[${scene}] missing config: ${missing.join(', ')}`);
+        }
+        return config;
+    }
     /**
      * 根据header中的x-hioshop-token值获取用户id
      */
-    async getUserId() {
-        const token = think.token;
+    async getUserId(token = '') {
         if (!token) {
             return 0;
         }
 
-        const result = await this.parse();
+        const result = await this.parse(token);
         if (think.isEmpty(result) || result.user_id <= 0) {
             return 0;
         }
@@ -41,8 +72,8 @@ module.exports = class extends think.Service {
     /**
      * 根据值获取用户信息
      */
-    async getUserInfo() {
-        const userId = await this.getUserId();
+    async getUserInfo(token = '') {
+        const userId = await this.getUserId(token);
         if (userId <= 0) {
             return null;
         }
@@ -64,25 +95,28 @@ module.exports = class extends think.Service {
         return token;
     }
 
-    async parse(token = think.token) {
-        const secret = this.getTokenSecret();
-        if (!secret) {
+    async parse(token = '') {
+        const secrets = this.getVerifySecrets();
+        if (secrets.length === 0) {
             return null;
         }
         if (token) {
-            try {
-                return jwt.verify(token, secret, {
-                    algorithms: [this.getTokenAlgorithm()]
-                });
-            } catch (err) {
-                return null;
+            for (const secret of secrets) {
+                try {
+                    return jwt.verify(token, secret, {
+                        algorithms: [this.getTokenAlgorithm()]
+                    });
+                } catch (err) {
+                    continue;
+                }
             }
+            return null;
         }
         return null;
     }
 
-    async verify() {
-        const result = await this.parse();
+    async verify(token = '') {
+        const result = await this.parse(token);
         if (think.isEmpty(result)) {
             return false;
         }
@@ -91,6 +125,7 @@ module.exports = class extends think.Service {
     }
 
     async getAccessToken(forceRefresh = false) {
+        const weixinConfig = this.ensureWeixinConfig(['appid', 'secret'], 'admin.token.getAccessToken');
         if (!forceRefresh && cachedAccessToken && Date.now() < cachedAccessTokenExpireAt) {
             return cachedAccessToken;
         }
@@ -99,8 +134,8 @@ module.exports = class extends think.Service {
             url: 'https://api.weixin.qq.com/cgi-bin/token',
             qs: {
                 grant_type: 'client_credential',
-                secret: think.config('weixin.secret'),
-                appid: think.config('weixin.appid')
+                secret: weixinConfig.secret,
+                appid: weixinConfig.appid
             }
         };
         try {

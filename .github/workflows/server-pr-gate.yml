@@ -1,0 +1,137 @@
+name: server-pr-gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: hioshop_ci_root_password
+          MYSQL_DATABASE: hiolabsDB
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      NODE_ENV: production
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: hiolabsDB
+      MYSQL_USER: root
+      MYSQL_PASSWORD: hioshop_ci_root_password
+
+      COUPON_TEST_DB_HOST: 127.0.0.1
+      COUPON_TEST_DB_PORT: "3306"
+      COUPON_TEST_DB_NAME: hiolabsDB
+      COUPON_TEST_DB_USER: root
+      COUPON_TEST_DB_PASSWORD: hioshop_ci_root_password
+
+      SECURITY_TEST_DB_HOST: 127.0.0.1
+      SECURITY_TEST_DB_PORT: "3306"
+      SECURITY_TEST_DB_NAME: hiolabsDB
+      SECURITY_TEST_DB_USER: root
+      SECURITY_TEST_DB_PASSWORD: hioshop_ci_root_password
+
+      API_JWT_SECRET: ci_api_jwt_secret_for_pr_gate_only
+      ADMIN_JWT_SECRET: ci_admin_jwt_secret_for_pr_gate_only
+      WEIXIN_PARTNER_KEY: ci_partner_key_for_pr_gate
+      WEIXIN_APPID: ci_weixin_appid
+      WEIXIN_MCH_ID: ci_weixin_mch
+      ENABLE_TEST_PAY_ENDPOINT: "false"
+      COUPON_TEST_BASE_URL: http://127.0.0.1:8360
+      SECURITY_TEST_BASE_URL: http://127.0.0.1:8360
+      AUTH_CONTEXT_TEST_BASE_URL: http://127.0.0.1:8360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure mysql client exists
+        run: |
+          if ! command -v mysql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y mysql-client
+          fi
+
+      - name: Wait for MySQL ready
+        run: |
+          for i in {1..60}; do
+            if mysqladmin ping -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" --silent; then
+              echo "MySQL is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MySQL is not ready in time"
+          exit 1
+
+      - name: Import database seed
+        run: |
+          mysql -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS \`$MYSQL_DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+          mysql -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" < hiolabsDB.sql
+
+      - name: Start server
+        run: |
+          nohup npm run start:prod > /tmp/hioshop-server.log 2>&1 &
+          echo $! > /tmp/hioshop-server.pid
+
+      - name: Wait for server health
+        run: |
+          for i in {1..90}; do
+            if curl -fsS "http://127.0.0.1:8360/" >/tmp/hioshop-health.json 2>/dev/null; then
+              echo "Server is ready:"
+              cat /tmp/hioshop-health.json
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server is not ready in time"
+          tail -n 200 /tmp/hioshop-server.log || true
+          exit 1
+
+      - name: Run PR gate
+        run: npm run test:pr-gate
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hioshop-server-log
+          path: /tmp/hioshop-server.log
+          if-no-files-found: ignore
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/hioshop-server.pid ]; then
+            kill "$(cat /tmp/hioshop-server.pid)" || true
+          fi

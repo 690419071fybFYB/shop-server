@@ -130,10 +130,18 @@ module.exports = class extends think.Model {
     }
     async getExpressInfo(shipperName, expressNo) {
         console.log('出发1111111');
-		let appCode = "APPCODE "+ think.config('aliexpress.appcode');
+        const aliConfig = think.config('aliexpress') || {};
+        const aliUrl = String(aliConfig.url || '').trim();
+        const aliAppCode = String(aliConfig.appcode || '').trim();
+        if (!aliUrl || !aliAppCode) {
+            throw new Error('[admin.orderExpress.getExpressInfo] missing config: aliexpress.url/aliexpress.appcode');
+        }
+		let appCode = `APPCODE ${aliAppCode}`;
+        const queryNo = encodeURIComponent(String(expressNo || ''));
+        const queryType = encodeURIComponent(String(shipperName || ''));
         const options = {
             method: 'GET',
-            url: 'http://wuliu.market.alicloudapi.com/kdi?no=' + expressNo + '&type=' + shipperName,
+            url: `${aliUrl}?no=${queryNo}&type=${queryType}`,
             headers: {
                 "Content-Type": "application/json; charset=utf-8",
                 "Authorization": appCode

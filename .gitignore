@@ -32,6 +32,9 @@ output.tar.gz
 
 runtime/
 app/
+.env
+.env.*
+!.env.example
 
 config.development.js
 adapter.development.js

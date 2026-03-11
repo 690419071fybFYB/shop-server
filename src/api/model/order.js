@@ -1,13 +1,11 @@
-const _ = require('lodash');
+const orderSnUtil = require('../../common/utils/order_sn');
 module.exports = class extends think.Model {
     /**
      * 生成订单的编号order_sn
      * @returns {string}
      */
-    // TODO 这里应该产生一个唯一的订单，但是实际上这里仍然存在两个订单相同的可能性
     generateOrderNumber() {
-        const date = new Date();
-        return date.getFullYear() + _.padStart(date.getMonth(), 2, '0') + _.padStart(date.getDay(), 2, '0') + _.padStart(date.getHours(), 2, '0') + _.padStart(date.getMinutes(), 2, '0') + _.padStart(date.getSeconds(), 2, '0') + _.random(100000, 999999);
+        return orderSnUtil.generateOrderSn();
     }
     getOrderStatus(showType) {
         let status = [];

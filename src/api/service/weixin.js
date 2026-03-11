@@ -12,6 +12,26 @@ module.exports = class extends think.Service {
     getNonceStr() {
         return crypto.randomBytes(16).toString('hex');
     }
+    getWeixinConfig() {
+        const config = think.config('weixin') || {};
+        return {
+            appid: String(config.appid || '').trim(),
+            secret: String(config.secret || '').trim(),
+            mch_id: String(config.mch_id || '').trim(),
+            partner_key: String(config.partner_key || '').trim(),
+            notify_url: String(config.notify_url || '').trim()
+        };
+    }
+    ensureWeixinConfig(requiredKeys = [], scene = 'weixin') {
+        const config = this.getWeixinConfig();
+        const missing = (Array.isArray(requiredKeys) ? requiredKeys : [])
+            .map((key) => String(key || '').trim())
+            .filter((key) => key && !config[key]);
+        if (missing.length > 0) {
+            throw new Error(`[${scene}] missing config: ${missing.join(', ')}`);
+        }
+        return config;
+    }
     filterSignPayload(payload) {
         const result = {};
         for (const key of Object.keys(payload || {})) {
@@ -67,6 +87,7 @@ module.exports = class extends think.Service {
      * @returns {Promise.<string>}
      */
     async decryptUserInfoData(sessionKey, encryptedData, iv) {
+        const weixinConfig = this.ensureWeixinConfig(['appid'], 'weixin.decryptUserInfoData');
         // base64 decode
         const _sessionKey = Buffer.from(sessionKey, 'base64');
         encryptedData = Buffer.from(encryptedData, 'base64');
@@ -83,7 +104,7 @@ module.exports = class extends think.Service {
         } catch (err) {
             return '';
         }
-        if (decoded.watermark.appid !== think.config('weixin.appid')) {
+        if (decoded.watermark.appid !== weixinConfig.appid) {
             return '';
         }
         return decoded;
@@ -94,15 +115,16 @@ module.exports = class extends think.Service {
      * @returns {Promise}
      */
     async createUnifiedOrder(payInfo) {
+        const weixinConfig = this.ensureWeixinConfig(['appid', 'mch_id', 'partner_key', 'notify_url'], 'weixin.createUnifiedOrder');
         const requestData = {
-            appid: think.config('weixin.appid'),
-            mch_id: think.config('weixin.mch_id'),
+            appid: weixinConfig.appid,
+            mch_id: weixinConfig.mch_id,
             nonce_str: this.getNonceStr(),
             body: payInfo.body,
             out_trade_no: payInfo.out_trade_no,
             total_fee: String(payInfo.total_fee),
             spbill_create_ip: payInfo.spbill_create_ip || '127.0.0.1',
-            notify_url: think.config('weixin.notify_url'),
+            notify_url: weixinConfig.notify_url,
             trade_type: 'JSAPI',
             openid: payInfo.openid
         };
@@ -120,13 +142,13 @@ module.exports = class extends think.Service {
         const responseData = this.parseXml(responseText);
         if (responseData.return_code === 'SUCCESS' && responseData.result_code === 'SUCCESS') {
             const returnParams = {
-                appid: responseData.appid || think.config('weixin.appid'),
+                appid: responseData.appid || weixinConfig.appid,
                 timeStamp: parseInt(Date.now() / 1000) + '',
                 nonceStr: responseData.nonce_str || requestData.nonce_str,
                 package: `prepay_id=${responseData.prepay_id}`,
                 signType: 'MD5'
             };
-            const paramStr = `appId=${returnParams.appid}&nonceStr=${returnParams.nonceStr}&package=${returnParams.package}&signType=${returnParams.signType}&timeStamp=${returnParams.timeStamp}&key=${think.config('weixin.partner_key')}`;
+            const paramStr = `appId=${returnParams.appid}&nonceStr=${returnParams.nonceStr}&package=${returnParams.package}&signType=${returnParams.signType}&timeStamp=${returnParams.timeStamp}&key=${weixinConfig.partner_key}`;
             returnParams.paySign = md5(paramStr).toUpperCase();
             return returnParams;
         }
@@ -162,7 +184,8 @@ module.exports = class extends think.Service {
      * @returns {Promise.<string>}
      */
     signQuery(queryStr) {
-        queryStr = queryStr + '&key=' + think.config('weixin.partner_key');
+        const weixinConfig = this.ensureWeixinConfig(['partner_key'], 'weixin.signQuery');
+        queryStr = queryStr + '&key=' + weixinConfig.partner_key;
         const md5 = require('md5');
         const md5Sign = md5(queryStr);
         return md5Sign.toUpperCase();
@@ -206,6 +229,7 @@ module.exports = class extends think.Service {
         return this.createUnifiedOrder(payInfo);
     }
     async getAccessToken(forceRefresh = false) {
+        const weixinConfig = this.ensureWeixinConfig(['appid', 'secret'], 'weixin.getAccessToken');
         if (!forceRefresh && cachedAccessToken && Date.now() < cachedAccessTokenExpireAt) {
             return cachedAccessToken;
         }
@@ -215,8 +239,8 @@ module.exports = class extends think.Service {
             url: 'https://api.weixin.qq.com/cgi-bin/token',
             qs: {
                 grant_type: 'client_credential',
-                secret: think.config('weixin.secret'),
-                appid: think.config('weixin.appid')
+                secret: weixinConfig.secret,
+                appid: weixinConfig.appid
             }
         };
         try {

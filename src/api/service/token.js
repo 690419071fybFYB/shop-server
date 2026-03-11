@@ -7,6 +7,21 @@ module.exports = class extends think.Service {
         const config = this.getSecurityConfig();
         return String(config.apiTokenSecret || '').trim();
     }
+    getLegacyTokenSecrets() {
+        const config = this.getSecurityConfig();
+        const legacy = config.apiTokenLegacySecrets;
+        if (Array.isArray(legacy)) {
+            return legacy.map((item) => String(item || '').trim()).filter(Boolean);
+        }
+        if (typeof legacy === 'string') {
+            return legacy.split(',').map((item) => String(item || '').trim()).filter(Boolean);
+        }
+        return [];
+    }
+    getVerifySecrets() {
+        const merged = [this.getTokenSecret(), ...this.getLegacyTokenSecrets()].filter(Boolean);
+        return [...new Set(merged)];
+    }
     getTokenAlgorithm() {
         const config = this.getSecurityConfig();
         return String(config.tokenAlgorithm || 'HS256').trim() || 'HS256';
@@ -29,18 +44,21 @@ module.exports = class extends think.Service {
         return result.user_id;
     }
     parse(token) {
-        const secret = this.getTokenSecret();
-        if (!secret) {
+        const secrets = this.getVerifySecrets();
+        if (secrets.length === 0) {
             return null;
         }
         if (token) {
-            try {
-                return jwt.verify(token, secret, {
-                    algorithms: [this.getTokenAlgorithm()]
-                });
-            } catch (err) {
-                return null;
+            for (const secret of secrets) {
+                try {
+                    return jwt.verify(token, secret, {
+                        algorithms: [this.getTokenAlgorithm()]
+                    });
+                } catch (err) {
+                    continue;
+                }
             }
+            return null;
         }
         return null;
     }

@@ -1,11 +1,26 @@
 module.exports = class extends think.Model {
+    normalizeUserId(userId) {
+        const fromArg = Number(userId || 0);
+        if (fromArg > 0) {
+            return fromArg;
+        }
+        const fromCtx = Number(this.ctx && this.ctx.state && this.ctx.state.userId || 0);
+        if (fromCtx > 0) {
+            return fromCtx;
+        }
+        return 0;
+    }
     /**
      * 获取购物车的商品
      * @returns {Promise.<*>}
      */
-    async getGoodsList() {
+    async getGoodsList(userId) {
+        const uid = this.normalizeUserId(userId);
+        if (uid <= 0) {
+            return [];
+        }
         const goodsList = await this.model('cart').where({
-            user_id: think.userId,
+            user_id: uid,
             is_delete: 0
         }).select();
         return goodsList;
@@ -14,9 +29,13 @@ module.exports = class extends think.Model {
      * 获取购物车的选中的商品
      * @returns {Promise.<*>}
      */
-    async getCheckedGoodsList() {
+    async getCheckedGoodsList(userId) {
+        const uid = this.normalizeUserId(userId);
+        if (uid <= 0) {
+            return [];
+        }
         const goodsList = await this.model('cart').where({
-            user_id: think.userId,
+            user_id: uid,
             checked: 1,
             is_delete: 0
         }).select();
@@ -26,9 +45,13 @@ module.exports = class extends think.Model {
      * 清空已购买的商品
      * @returns {Promise.<*>}
      */
-    async clearBuyGoods() {
+    async clearBuyGoods(userId) {
+        const uid = this.normalizeUserId(userId);
+        if (uid <= 0) {
+            return 0;
+        }
         const $res = await this.model('cart').where({
-            user_id: think.userId,
+            user_id: uid,
             checked: 1,
             is_delete: 0
         }).update({

@@ -1,18 +1,78 @@
 const Base = require('./base.js');
 module.exports = class extends Base {
+    isTestPayEndpointEnabled() {
+        const features = think.config('features') || {};
+        const fromConfig = features.enableTestPayEndpoint;
+        const fromEnv = process.env.ENABLE_TEST_PAY_ENDPOINT;
+        const raw = String(fromEnv !== undefined ? fromEnv : fromConfig || '').toLowerCase();
+        return ['1', 'true', 'yes', 'on'].includes(raw);
+    }
+
+    buildMockPayNotifyResult(orderInfo) {
+        const now = new Date();
+        const pad = (v) => String(v).padStart(2, '0');
+        const timeEnd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        return {
+            out_trade_no: orderInfo.order_sn,
+            transaction_id: `mock_tx_${Date.now()}`,
+            time_end: timeEnd
+        };
+    }
+
     /**
      * 获取支付的请求参数
      * @returns {Promise<PreventPromise|void|Promise>}
      */
     // 测试时付款，将真实接口注释。 在小程序的services/pay.js中按照提示注释和打开
     async preWeixinPayaAction() {
-        return this.fail(404, '接口不存在');
+        if (!this.isTestPayEndpointEnabled()) {
+            return this.fail(404, '接口不存在');
+        }
+        if (String(process.env.NODE_ENV || '').toLowerCase() === 'production') {
+            return this.fail(404, '接口不存在');
+        }
+        const userId = this.requireLoginUserId();
+        if (userId <= 0) {
+            return;
+        }
+        const orderId = this.get('orderId');
+        const orderInfo = await this.model('order').where({
+            id: orderId,
+            user_id: userId,
+            is_delete: 0
+        }).find();
+        if (think.isEmpty(orderInfo)) {
+            return this.fail(404, '订单不存在');
+        }
+        if (parseInt(orderInfo.pay_status, 10) === 2) {
+            return this.fail(400, '订单已支付，请不要重复操作');
+        }
+        if (!(orderInfo.order_type == 0 || orderInfo.order_type == 1)) {
+            return this.fail(400, '仅支持普通订单和秒杀订单');
+        }
+        const orderModel = this.model('order');
+        const result = this.buildMockPayNotifyResult(orderInfo);
+        await orderModel.updatePayData(orderInfo.id, result);
+        const couponService = this.service('coupon', 'api');
+        const promotionService = this.service('promotion', 'api');
+        await couponService.consumeCouponsForOrder(orderInfo.id);
+        try {
+            await promotionService.consumeSeckillLocks(orderInfo.id);
+        } catch (err) {
+            think.logger && think.logger.warn && think.logger.warn(`[pay.preWeixinPaya.consumeSeckillLocks] ${err.message || err}`);
+        }
+        await this.afterPay(orderInfo);
+        return this.success({
+            orderId: orderInfo.id,
+            transactionId: result.transaction_id,
+            testMode: true
+        });
     }
     // 真实的付款接口
     async preWeixinPayAction() {
-        const userId = this.getLoginUserId();
+        const userId = this.requireLoginUserId();
         if (userId <= 0) {
-            return this.fail(401, '请先登录');
+            return;
         }
         const orderId = this.get('orderId');
         const orderInfo = await this.model('order').where({
@@ -77,7 +137,6 @@ module.exports = class extends Base {
     }
     async notifyAction() {
         const WeixinSerivce = this.service('weixin', 'api');
-        const data = this.post('xml');
         const result = WeixinSerivce.payNotify(this.post('xml'));
         
         if (!result) {

@@ -1,7 +1,30 @@
 const Base = require('./base.js');
 const moment = require('moment');
-const _ = require('lodash');
+const orderSnUtil = require('../../common/utils/order_sn');
 module.exports = class extends Base {
+    async updateOrderSnWithRetry(orderId, {maxRetries = 3} = {}) {
+        const model = this.model('order');
+        const requestId = String(this.ctx && this.ctx.state && this.ctx.state.requestId || '');
+        return orderSnUtil.withOrderSnRetry({
+            maxRetries,
+            context: 'admin.controller.order.updateOrderSn',
+            logger: think.logger,
+            requestId,
+            orderId: Number(orderId || 0),
+            createOrderSn: () => model.generateOrderNumber(),
+            execute: async(orderSn) => {
+                const affectedRows = await model.where({
+                    id: orderId
+                }).update({
+                    order_sn: orderSn
+                });
+                return {
+                    orderSn,
+                    affectedRows
+                };
+            }
+        });
+    }
     /**
      * index action
      * @return {Promise} []
@@ -141,13 +164,8 @@ module.exports = class extends Base {
                 order_price: changePrice,
                 goods_price: changePrice
             });
-            let order_sn = this.model('order').generateOrderNumber();
-            await this.model('order').where({
-                id: order_id
-            }).update({
-                order_sn: order_sn
-            });
-            return this.success(order_sn);
+            const updateResult = await this.updateOrderSnWithRetry(order_id);
+            return this.success(updateResult.orderSn);
         } else if (addOrMinus == 1) {
             await this.model('order_goods').where({
                 id: id
@@ -159,13 +177,8 @@ module.exports = class extends Base {
                 order_price: changePrice,
                 goods_price: changePrice
             });
-            let order_sn = this.model('order').generateOrderNumber();
-            await this.model('order').where({
-                id: order_id
-            }).update({
-                order_sn: order_sn
-            });
-            return this.success(order_sn);
+            const updateResult = await this.updateOrderSnWithRetry(order_id);
+            return this.success(updateResult.orderSn);
         }
         return this.fail(400, 'addOrMinus 参数错误');
     }
@@ -191,13 +204,8 @@ module.exports = class extends Base {
             order_price: changePrice,
             goods_price: changePrice
         });
-        let order_sn = this.model('order').generateOrderNumber();
-        await this.model('order').where({
-            id: order_id
-        }).update({
-            order_sn: order_sn
-        });
-        return this.success(order_sn);
+        const updateResult = await this.updateOrderSnWithRetry(order_id);
+        return this.success(updateResult.orderSn);
     }
     async saveAdminMemoAction() {
         const id = this.post('id');
@@ -405,12 +413,12 @@ module.exports = class extends Base {
         let newData = {
             actual_price: actualPrice,
             freight_price: freightPrice,
-            goods_price: goodsPrice,
-            order_sn: model.generateOrderNumber()
+            goods_price: goodsPrice
         }
         await model.where({
             id: id
         }).update(newData);
+        await this.updateOrderSnWithRetry(id);
     }
     async getOrderExpressAction() {
         const orderId = this.post('orderId');
@@ -474,15 +482,9 @@ module.exports = class extends Base {
         });
     }
     async rePrintExpressAction() {
-        const date = new Date();
         let orderId = this.get('orderId')
-        let order_sn = date.getFullYear() + _.padStart(date.getMonth(), 2, '0') + _.padStart(date.getDay(), 2, '0') + _.padStart(date.getHours(), 2, '0') + _.padStart(date.getMinutes(), 2, '0') + _.padStart(date.getSeconds(), 2, '0') + _.random(100000, 999999);
-        let info = await this.model('order').where({
-            id: orderId
-        }).update({
-            order_sn: order_sn
-        });
-        return this.success(info);
+        const updateResult = await this.updateOrderSnWithRetry(orderId);
+        return this.success(updateResult.affectedRows);
     }
     async directPrintExpressAction() {
         let orderId = this.get('orderId')

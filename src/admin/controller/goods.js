@@ -1261,7 +1261,8 @@ module.exports = class extends Base {
         }
         try {
             const service = this.service('goods_import', 'admin');
-            const result = await service.createTaskFromUpload(file, mode, think.userId);
+            const operatorId = Number(this.ctx.state.userId || 0);
+            const result = await service.createTaskFromUpload(file, mode, operatorId);
             return this.success(result);
         } catch (error) {
             console.error('创建导入任务失败:', error);
@@ -1372,12 +1373,11 @@ module.exports = class extends Base {
             return this.fail(400, '图片地址不合法');
         }
         try {
-            const cosService = this.service('cos');
-            const cosUrl = await cosService.fetchAndUpload(remoteUrl);
-            console.info(`[uploadHttpsImage] operator=${think.userId || 0} target=${remoteUrl} result=success`);
+            const operatorId = Number(this.ctx.state.userId || 0);
+            const goodsAssetService = this.service('goods_asset', 'admin');
+            const cosUrl = await goodsAssetService.uploadHttpsImage(remoteUrl, operatorId);
             return this.success(cosUrl);
         } catch (error) {
-            console.warn(`[uploadHttpsImage] operator=${think.userId || 0} target=${remoteUrl} result=failed reason=${error && error.message ? error.message : 'unknown'}`);
             console.error('上传HTTPS图片失败:', error);
             return this.fail(400, '上传失败');
         }

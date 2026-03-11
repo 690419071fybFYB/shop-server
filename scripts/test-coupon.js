@@ -1,11 +1,12 @@
-/* eslint-disable no-console */
+require('dotenv').config({path: '.env.local'});
+require('dotenv').config();
 const assert = require('assert');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const mysql = require('mysql2/promise');
 
-const ADMIN_SECRET = process.env.ADMIN_TOKEN_SECRET || 'SLDLKKDS323ssdd@#@@gf';
-const API_SECRET = process.env.API_TOKEN_SECRET || 'sdfsdfsdf123123!ASDasdasdasdasda';
+const ADMIN_SECRET = process.env.ADMIN_JWT_SECRET || process.env.ADMIN_TOKEN_SECRET || '';
+const API_SECRET = process.env.API_JWT_SECRET || process.env.API_TOKEN_SECRET || '';
 const BASE_URL = process.env.COUPON_TEST_BASE_URL || 'http://127.0.0.1:8360';
 const ADMIN_USER_ID = Number(process.env.COUPON_TEST_ADMIN_USER_ID || 14);
 const USER_ID = Number(process.env.COUPON_TEST_USER_ID || 1048);
@@ -265,6 +266,9 @@ async function getOrderRow(conn, orderId) {
 }
 
 async function main() {
+  if (!ADMIN_SECRET || !API_SECRET) {
+    throw new Error('缺少 token 密钥：请设置 ADMIN_JWT_SECRET/API_JWT_SECRET（兼容 ADMIN_TOKEN_SECRET/API_TOKEN_SECRET）');
+  }
   const adminToken = buildToken(ADMIN_SECRET, ADMIN_USER_ID);
   const apiToken = buildToken(API_SECRET, USER_ID);
   const conn = await openDb();

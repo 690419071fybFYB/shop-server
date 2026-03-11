@@ -360,7 +360,7 @@ module.exports = class extends think.Service {
       return {accepted: true, status: REWARD_STATUS.SKIPPED_LIMIT};
     }
 
-    const couponService = this.service('coupon', 'api');
+    const couponService = think.service('coupon', 'api');
     try {
       const rewardResult = await couponService.receiveCoupon(inviterUserId, Number(config.reward_coupon_id), {
         allowMultiple: true,

@@ -4,3 +4,6 @@ runtime
 logs
 .git
 .gitignore
+app
+.env
+.env.*
