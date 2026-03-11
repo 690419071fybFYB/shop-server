@@ -32,13 +32,19 @@ module.exports = class extends think.Service {
         const transactionModel = this.model('order');
         const couponService = think.service('coupon', 'api');
         const requestId = String(this.ctx && this.ctx.state && this.ctx.state.requestId || '');
+        const createOrderSn = () => {
+            if (transactionModel && typeof transactionModel.generateOrderNumber === 'function') {
+                return transactionModel.generateOrderNumber();
+            }
+            return orderSnUtil.generateOrderSn();
+        };
 
         await orderSnUtil.withOrderSnRetry({
             maxRetries: 3,
             context: 'api.service.order.createOrderWithItems',
             logger: think.logger,
             requestId,
-            createOrderSn: () => transactionModel.generateOrderNumber(),
+            createOrderSn,
             execute: async (orderSn) => {
                 orderPayload.order_sn = orderSn;
                 delete orderPayload.id;

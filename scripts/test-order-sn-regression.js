@@ -256,6 +256,65 @@ async function runAdminControllerRetryRegression() {
   assert.strictEqual(loggerBag.errors.length, 0, 'Admin 成功场景不应记录 error');
 }
 
+async function runApiServiceFallbackGeneratorRegression() {
+  console.log('7) API service 缺少 generateOrderNumber 时应回退公共生成器');
+  const loggerBag = createLoggerCollector();
+  global.think.logger = loggerBag.logger;
+  global.think.service = () => ({
+    lockOrConsumeCouponsForOrder: async() => {}
+  });
+
+  const expectedOrderSn = '20260311000000999999';
+  const originalGenerateOrderSn = orderSnUtil.generateOrderSn;
+  let generateCalled = 0;
+  orderSnUtil.generateOrderSn = () => {
+    generateCalled += 1;
+    return expectedOrderSn;
+  };
+
+  try {
+    const orderModel = {
+      db: () => ({}),
+      add: async() => 9101
+    };
+    const orderGoodsModel = {
+      db: () => ({}),
+      addMany: async() => {}
+    };
+    const transactionModel = {
+      db: () => ({}),
+      model: (name) => {
+        if (name === 'order') return orderModel;
+        if (name === 'order_goods') return orderGoodsModel;
+        throw new Error(`unknown model ${name}`);
+      },
+      transaction: async(handler) => handler()
+    };
+
+    const service = new ApiOrderService();
+    service.ctx = {state: {requestId: 'req-api-order-sn-fallback'}};
+    service.model = (name) => {
+      if (name !== 'order') {
+        throw new Error(`unexpected model ${name}`);
+      }
+      return transactionModel;
+    };
+
+    const result = await service.createOrderWithItems({
+      orderInfo: {user_id: 1002},
+      pricedGoodsList: [],
+      userId: 1002,
+      selectedCoupons: []
+    });
+
+    assert.strictEqual(generateCalled, 1, '应调用一次公共 order_sn 生成器');
+    assert.strictEqual(result.order_sn, expectedOrderSn, '应使用公共生成器返回的 order_sn');
+    assert.strictEqual(result.id, 9101, '应成功创建订单并返回订单 ID');
+  } finally {
+    orderSnUtil.generateOrderSn = originalGenerateOrderSn;
+  }
+}
+
 async function main() {
   runGeneratorRegression();
   await runRetrySuccessRegression();
@@ -263,6 +322,7 @@ async function main() {
   await runNonOrderSnDuplicateRegression();
   await runApiServiceRetryRegression();
   await runAdminControllerRetryRegression();
+  await runApiServiceFallbackGeneratorRegression();
   console.log('order_sn 回归测试通过。');
 }
 
