@@ -1,6 +1,48 @@
 const Base = require('./base.js');
 const moment = require('moment');
 module.exports = class extends Base {
+    getOrderAutoCompleteDays() {
+        const configured = Number(process.env.ORDER_AUTO_COMPLETE_DAYS || 7);
+        if (!Number.isFinite(configured)) {
+            return 7;
+        }
+        return Math.max(1, Math.floor(configured));
+    }
+
+    resolveOrderCompleteBaseTime(orderInfo = {}) {
+        const confirmTime = Number(orderInfo.confirm_time || 0);
+        if (confirmTime > 0) {
+            return confirmTime;
+        }
+        return Number(orderInfo.shipping_time || 0);
+    }
+
+    async autoCompleteConfirmedOrders(currentTime) {
+        const now = Number(currentTime || Math.floor(Date.now() / 1000));
+        const autoCompleteDays = this.getOrderAutoCompleteDays();
+        const deadline = now - autoCompleteDays * 24 * 60 * 60;
+        const candidateList = await this.model('order').where({
+            order_status: ['IN', [302, 303]],
+            is_delete: 0
+        }).field('id,confirm_time,shipping_time').select();
+        const orderIds = [];
+        for (const item of candidateList) {
+            const baseTime = this.resolveOrderCompleteBaseTime(item);
+            if (baseTime > 0 && baseTime <= deadline) {
+                orderIds.push(Number(item.id));
+            }
+        }
+        if (orderIds.length === 0) {
+            return 0;
+        }
+        return this.model('order').where({
+            id: ['IN', orderIds]
+        }).update({
+            order_status: 401,
+            dealdone_time: now
+        });
+    }
+
     async timetaskAction() {
         console.log("=============开始============");
         let currentTime = parseInt(new Date().getTime() / 1000);
@@ -30,6 +72,7 @@ module.exports = class extends Base {
             // await this.model('order').where({id: ['IN', orderList.map((ele) => ele.id)]}).update({order_status: 102});
             const couponService = this.service('coupon', 'api');
             const promotionService = this.service('promotion', 'api');
+            const grouponService = this.service('groupon', 'api');
             for (const item of orderList) {
 
                 let orderId = item.id;
@@ -43,6 +86,13 @@ module.exports = class extends Base {
                     await promotionService.releaseSeckillLocks(orderId);
                 } catch (err) {
                     think.logger && think.logger.warn && think.logger.warn(`[crontab.releaseSeckillLocks] ${err.message || err}`);
+                }
+                if (Number(item.order_type || 0) === 2) {
+                    try {
+                        await grouponService.handleUnpaidOrderClosed(orderId);
+                    } catch (err) {
+                        think.logger && think.logger.warn && think.logger.warn(`[crontab.handleUnpaidOrderClosed] orderId=${orderId} ${err.message || err}`);
+                    }
                 }
             }
         }
@@ -80,6 +130,7 @@ module.exports = class extends Base {
                 });
             }
         }
+        await this.autoCompleteConfirmedOrders(currentTime);
         const couponService = this.service('coupon', 'api');
         await couponService.expireCouponsBatch();
         const promotionService = this.service('promotion', 'api');
@@ -87,6 +138,12 @@ module.exports = class extends Base {
             await promotionService.releaseExpiredSeckillLocksBatch(currentTime);
         } catch (err) {
             think.logger && think.logger.warn && think.logger.warn(`[crontab.releaseExpiredSeckillLocksBatch] ${err.message || err}`);
+        }
+        const grouponService = this.service('groupon', 'api');
+        try {
+            await grouponService.expireTeamsAndCreateRefundTasks(currentTime);
+        } catch (err) {
+            think.logger && think.logger.error && think.logger.error(`[crontab.grouponExpireScan] ${err.message || err}`);
         }
         return this.success();
     }

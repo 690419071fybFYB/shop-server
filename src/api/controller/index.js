@@ -110,9 +110,9 @@ module.exports = class extends Base {
 				is_on_sale: 1,
 				is_index: 1,
 				is_delete: 0
-			}).field('id,list_pic_url,is_new,goods_number,name,min_retail_price').order({
-				sort_order: 'asc'
-			}).select();
+			}).field('id,list_pic_url,is_new,goods_number,name,min_retail_price,sell_volume')
+                .order('sell_volume DESC, sort_order ASC, id DESC')
+                .select();
 			categoryItem.goodsList = categoryGoods;
 		}
 		if (Array.isArray(categoryList) && categoryList.length > 0) {

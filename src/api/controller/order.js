@@ -33,6 +33,48 @@ module.exports = class extends Base {
         }, 0);
     }
 
+    isOrderAddressEditable(orderStatus) {
+        const editableStatuses = new Set([101, 801]);
+        return editableStatuses.has(Number(orderStatus));
+    }
+
+    async buildOrderFreightItems(orderId, userId) {
+        const orderGoodsList = await this.model('order_goods').where({
+            order_id: orderId,
+            user_id: userId,
+            is_delete: 0
+        }).select();
+        const freightItems = [];
+        for (const item of orderGoodsList) {
+            const goodsInfo = await this.model('goods').where({
+                id: item.goods_id
+            }).field('id,freight_template_id').find();
+            const productInfo = await this.model('product').where({
+                id: item.product_id
+            }).field('id,goods_weight').find();
+            freightItems.push({
+                number: Number(item.number || 0),
+                retail_price: Number(item.retail_price || 0),
+                freight_template_id: Number(goodsInfo.freight_template_id || 0),
+                goods_weight: Number(productInfo.goods_weight || 0)
+            });
+        }
+        return freightItems;
+    }
+
+    async calculateOrderFreightPrice({orderId, userId, provinceId}) {
+        const freightItems = await this.buildOrderFreightItems(orderId, userId);
+        if (!Array.isArray(freightItems) || freightItems.length === 0) {
+            return 0;
+        }
+        const freightService = this.service('freight', 'api');
+        const freightPrice = await freightService.calculateFreightPrice({
+            provinceId,
+            items: freightItems
+        });
+        return Number(freightPrice || 0);
+    }
+
     buildOrderPrintInfo(pricedGoodsList = []) {
         const list = Array.isArray(pricedGoodsList) ? pricedGoodsList : [];
         if (list.length === 0) {
@@ -43,7 +85,7 @@ module.exports = class extends Base {
     }
 
     async ensureOwnedOrder(orderId, userId, {allowDeleted = false} = {}) {
-        const orderInfo = await this.model('order').field('id,user_id,is_delete,order_status,order_type').where({
+        const orderInfo = await this.model('order').field('id,user_id,is_delete,order_status,order_type,goods_price,coupon_price,freight_price').where({
             id: orderId
         }).find();
         if (think.isEmpty(orderInfo)) {
@@ -210,6 +252,10 @@ module.exports = class extends Base {
                 }).update(updateInfo);
                 const couponService = this.service('coupon', 'api');
                 await couponService.releaseLockedCoupons(orderId);
+                if (Number(orderInfo.order_type || 0) === 2) {
+                    const grouponService = this.service('groupon', 'api');
+                    await grouponService.handleUnpaidOrderClosed(orderId);
+                }
             }
         }
         orderInfo.add_time = moment.unix(orderInfo.add_time).format('YYYY-MM-DD HH:mm:ss');
@@ -276,21 +322,23 @@ module.exports = class extends Base {
         let updateInfo = {
             order_status: 102
         };
-        //取消订单，还原库存
-        const goodsInfo = await this.model('order_goods').where({
-            order_id: orderId,
-            user_id: userId
-        }).select();
-        for (const item of goodsInfo) {
-            let goods_id = item.goods_id;
-            let product_id = item.product_id;
-            let number = item.number;
-            await this.model('goods').where({
-                id: goods_id
-            }).increment('goods_number', number);
-            await this.model('product').where({
-                id: product_id
-            }).increment('goods_number', number);
+        if (Number(orderInfo.pay_status || 0) === 2) {
+            // 已支付后取消才需要回补库存；待支付订单未扣减库存，避免重复回补。
+            const goodsInfo = await this.model('order_goods').where({
+                order_id: orderId,
+                user_id: userId
+            }).select();
+            for (const item of goodsInfo) {
+                let goods_id = item.goods_id;
+                let product_id = item.product_id;
+                let number = item.number;
+                await this.model('goods').where({
+                    id: goods_id
+                }).increment('goods_number', number);
+                await this.model('product').where({
+                    id: product_id
+                }).increment('goods_number', number);
+            }
         }
         const succesInfo = await this.model('order').where({
             id: orderId,
@@ -301,6 +349,10 @@ module.exports = class extends Base {
         }
         const couponService = this.service('coupon', 'api');
         await couponService.releaseLockedCoupons(orderId);
+        if (Number(orderInfo.order_type || 0) === 2) {
+            const grouponService = this.service('groupon', 'api');
+            await grouponService.handleUnpaidOrderClosed(orderId);
+        }
         return this.success(succesInfo);
     }
     /**
@@ -521,16 +573,29 @@ module.exports = class extends Base {
         if (think.isEmpty(currentOrder)) {
             return;
         }
+        if (!this.isOrderAddressEditable(currentOrder.order_status)) {
+            return this.fail(400, '当前订单状态不支持修改地址');
+        }
         // 备注
         // let postscript = this.post('postscript');
         // const buffer = Buffer.from(postscript);
         const updateAddress = await this.model('address').where({
             id: addressId,
-            user_id: userId
+            user_id: userId,
+            is_delete: 0
         }).find();
         if (think.isEmpty(updateAddress)) {
             return this.fail(400, '收货地址不存在');
         }
+        const freightPrice = await this.calculateOrderFreightPrice({
+            orderId,
+            userId,
+            provinceId: updateAddress.province_id
+        });
+        const goodsPrice = Number(currentOrder.goods_price || 0);
+        const couponPrice = Number(currentOrder.coupon_price || 0);
+        const orderPrice = Number((goodsPrice + freightPrice).toFixed(2));
+        const actualPrice = Math.max(0, Number((orderPrice - couponPrice).toFixed(2)));
         const orderInfo = {
             // 收货地址和运费
             consignee: updateAddress.name,
@@ -539,8 +604,10 @@ module.exports = class extends Base {
             city: updateAddress.city_id,
             district: updateAddress.district_id,
             address: updateAddress.address,
-            // TODO 根据地址计算运费
-            // freight_price: 0.00,
+            freight_price: freightPrice,
+            order_price: orderPrice,
+            actual_price: actualPrice,
+            change_price: actualPrice,
             // 备注
             // postscript: buffer.toString('base64'),
             // add_time: currentTime

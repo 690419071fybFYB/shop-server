@@ -167,6 +167,22 @@ module.exports = class extends think.Model {
             return '退件签收';
         }
     }
+    resolveReturnPrintTemplateFlag() {
+        const config = think.config('mianexpress') || think.config('mianExpress') || {};
+        const rawValue = Object.prototype.hasOwnProperty.call(config, 'return_print_template')
+            ? config.return_print_template
+            : config.returnPrintTemplate;
+        if (rawValue === true || rawValue === 1 || rawValue === '1') {
+            return 1;
+        }
+        if (typeof rawValue === 'string') {
+            const normalized = rawValue.trim().toLowerCase();
+            if (normalized === 'true' || normalized === 'yes' || normalized === 'on') {
+                return 1;
+            }
+        }
+        return 0;
+    }
     async getMianExpress(orderId, senderInfo, receiverInfo, expressType) {
         // 开始了
         let ShipperCode = '';
@@ -277,7 +293,7 @@ module.exports = class extends think.Model {
                 GoodsDesc: '', //商品描述
                 GoodsVol: 0 //商品体积m3
             }],
-            IsReturnPrintTemplate: 0, //返回电子面单模板：0-不需要；1-需要 todo
+            IsReturnPrintTemplate: this.resolveReturnPrintTemplateFlag(), // 返回电子面单模板：0-不需要；1-需要
             IsSendMessage: 0, //是否订阅短信：0-不需要；1-需要
             TemplateSize: '', //模板规格(默认的模板无需传值，非默认模板传对应模板尺寸)
             PackingType: 0, //包装类型(快运字段)默认为0； 0-    纸 1-    纤 2-    木 3-    托膜 4-   木托 99-其他
@@ -300,9 +316,7 @@ module.exports = class extends think.Model {
                 "CustomerID": '0'
             }, ]
         }
-        // 这里就是重新生成订单号，然后记得存入order表中去 todo,这里有点问题，不应该去直接生成新的订单号，而应该让打单员选择
         returnExpressInfo.OrderCode = orderExpress.order_sn;
-        // 这里就是重新生成订单号，然后记得存入order表中去 todo,这里有点问题，不应该去直接生成新的订单号，而应该让打单员选择
         returnExpressInfo.Receiver = receiverInfo;
         returnExpressInfo.Sender = senderInfo;
         const ExpressSerivce = think.service('express', 'api');

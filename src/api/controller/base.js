@@ -46,15 +46,23 @@ module.exports = class extends think.Controller {
 			'cart/delete',
 			'cart/goodscount',
 			'settings/showsettings',
-			'pay/notify'
+			'pay/notify',
+			'groupon/activitylist',
+			'groupon/activitydetail',
+			'groupon/teamdetail'
 		];
 		const defaultProfileRequiredControllers = ['order', 'address', 'footprint'];
 		const defaultProfileRequiredActions = ['cart/checkout'];
+		const mergedProfileRequiredActions = defaultProfileRequiredActions.concat([
+			'groupon/checkout',
+			'groupon/submit',
+			'groupon/myteams'
+		]);
 
 		const publicControllers = this.resolveConfigList('publicController', defaultPublicControllers, (item) => this.normalizeRouteName(item));
 		const publicActions = this.resolveConfigList('publicAction', defaultPublicActions, (item) => String(item || '').toLowerCase());
 		const profileRequiredControllers = this.resolveConfigList('profileRequiredController', defaultProfileRequiredControllers, (item) => this.normalizeRouteName(item));
-		const profileRequiredActions = this.resolveConfigList('profileRequiredAction', defaultProfileRequiredActions, (item) => String(item || '').toLowerCase());
+		const profileRequiredActions = this.resolveConfigList('profileRequiredAction', mergedProfileRequiredActions, (item) => String(item || '').toLowerCase());
 
 		const isPublic = publicControllers.includes(controller) || publicActions.includes(routeKey);
 		if (!isPublic && userId <= 0) {

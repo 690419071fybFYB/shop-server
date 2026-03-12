@@ -997,9 +997,145 @@ INSERT INTO `hiolabs_order` VALUES (1325,'20191005104128963425',1048,300,0,0,0,2
 UNLOCK TABLES;
 
 ALTER TABLE `hiolabs_order`
+  ADD COLUMN `pay_expire_at` int unsigned NOT NULL DEFAULT '0' COMMENT '支付截止时间',
   ADD COLUMN `coupon_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '优惠券优惠金额',
   ADD COLUMN `promotions_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '营销优惠金额',
-  ADD COLUMN `coupon_detail_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci COMMENT '优惠券快照明细';
+  ADD COLUMN `coupon_detail_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci COMMENT '优惠券快照明细',
+  ADD COLUMN `groupon_activity_id` mediumint unsigned NOT NULL DEFAULT '0' COMMENT '拼团活动ID',
+  ADD COLUMN `groupon_team_id` int unsigned NOT NULL DEFAULT '0' COMMENT '拼团团队ID';
+
+--
+-- Table structure for table `hiolabs_groupon_activity`
+--
+
+DROP TABLE IF EXISTS `hiolabs_groupon_activity`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_groupon_activity` (
+  `id` mediumint unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' COMMENT '活动名称',
+  `promo_tag` varchar(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' COMMENT '活动标签',
+  `goods_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `product_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `group_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '拼团价',
+  `origin_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '原价快照',
+  `retail_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '商品原价快照',
+  `group_size` smallint unsigned NOT NULL DEFAULT '2' COMMENT '成团人数',
+  `expire_hours` smallint unsigned NOT NULL DEFAULT '24' COMMENT '成团时效(小时)',
+  `duration_hours` smallint unsigned NOT NULL DEFAULT '24' COMMENT '成团时效(小时)',
+  `start_at` int unsigned NOT NULL DEFAULT '0',
+  `end_at` int unsigned NOT NULL DEFAULT '0',
+  `sort_order` smallint unsigned NOT NULL DEFAULT '100',
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'draft' COMMENT 'draft/enabled/disabled',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_goods_status` (`goods_id`,`status`,`is_delete`) USING BTREE,
+  KEY `idx_time_window` (`start_at`,`end_at`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='拼团活动表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hiolabs_groupon_team`
+--
+
+DROP TABLE IF EXISTS `hiolabs_groupon_team`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_groupon_team` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `activity_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `goods_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `product_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `team_sn` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `initiator_user_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `leader_user_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0进行中,1已成团,2已失效',
+  `target_size` smallint unsigned NOT NULL DEFAULT '2',
+  `joined_count` smallint unsigned NOT NULL DEFAULT '0',
+  `required_size` smallint unsigned NOT NULL DEFAULT '2',
+  `member_count` smallint unsigned NOT NULL DEFAULT '0' COMMENT '团队成员总数(含待支付)',
+  `paid_count` smallint unsigned NOT NULL DEFAULT '0' COMMENT '已支付成员数',
+  `expire_at` int unsigned NOT NULL DEFAULT '0',
+  `success_at` int unsigned NOT NULL DEFAULT '0',
+  `failed_at` int unsigned NOT NULL DEFAULT '0',
+  `fail_at` int unsigned NOT NULL DEFAULT '0',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_team_sn` (`team_sn`) USING BTREE,
+  KEY `idx_activity_status` (`activity_id`,`status`,`expire_at`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='拼团团队表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hiolabs_groupon_team_member`
+--
+
+DROP TABLE IF EXISTS `hiolabs_groupon_team_member`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_groupon_team_member` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `team_id` int unsigned NOT NULL DEFAULT '0',
+  `activity_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `user_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `order_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `order_sn` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `pay_status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0待支付,1已支付,2退款中,3已退款,9已取消',
+  `refund_status` tinyint unsigned NOT NULL DEFAULT '0',
+  `join_type` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0开团,1参团',
+  `pay_time` int unsigned NOT NULL DEFAULT '0',
+  `role` tinyint unsigned NOT NULL DEFAULT '2' COMMENT '1团长,2团员',
+  `join_status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0待支付,1已支付,2已失效',
+  `paid_at` int unsigned NOT NULL DEFAULT '0',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_team_user` (`team_id`,`user_id`) USING BTREE,
+  UNIQUE KEY `uniq_order_id` (`order_id`) USING BTREE,
+  KEY `idx_team_id` (`team_id`) USING BTREE,
+  KEY `idx_user_id` (`user_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='拼团团队成员表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hiolabs_groupon_refund_task`
+--
+
+DROP TABLE IF EXISTS `hiolabs_groupon_refund_task`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_groupon_refund_task` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `order_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `team_id` int unsigned NOT NULL DEFAULT '0',
+  `activity_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `user_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0待处理,1处理中,2已完成,3失败',
+  `reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `refund_no` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `refund_sn` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '' COMMENT '退款流水号',
+  `remark` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `processed_by` mediumint unsigned NOT NULL DEFAULT '0',
+  `processed_at` int unsigned NOT NULL DEFAULT '0',
+  `stock_reverted` tinyint(1) NOT NULL DEFAULT '0',
+  `retry_count` tinyint unsigned NOT NULL DEFAULT '0',
+  `stock_rollback_done` tinyint(1) NOT NULL DEFAULT '0' COMMENT '库存是否已回补',
+  `last_error` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `complete_time` int unsigned NOT NULL DEFAULT '0',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_order_id` (`order_id`) USING BTREE,
+  KEY `idx_status` (`status`,`update_time`) USING BTREE,
+  KEY `idx_team_id` (`team_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='拼团退款工单';
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `hiolabs_order_express`

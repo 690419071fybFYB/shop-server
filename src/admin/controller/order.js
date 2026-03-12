@@ -2,6 +2,28 @@ const Base = require('./base.js');
 const moment = require('moment');
 const orderSnUtil = require('../../common/utils/order_sn');
 module.exports = class extends Base {
+    isOrderStatusDeletable(orderStatus) {
+        const deletableStatuses = new Set([102, 103, 203, 401]);
+        return deletableStatuses.has(Number(orderStatus));
+    }
+
+    async deleteOrderWithTransaction(orderId) {
+        const model = this.model('order');
+        await model.transaction(async() => {
+            const bindModel = (name) => {
+                const currentModel = model.model(name);
+                currentModel.db(model.db());
+                return currentModel;
+            };
+            await bindModel('order_goods').where({
+                order_id: orderId
+            }).delete();
+            await bindModel('order').where({
+                id: orderId
+            }).limit(1).delete();
+        });
+    }
+
     async updateOrderSnWithRetry(orderId, {maxRetries = 3} = {}) {
         const model = this.model('order');
         const requestId = String(this.ctx && this.ctx.state && this.ctx.state.requestId || '');
@@ -812,15 +834,20 @@ module.exports = class extends Base {
         return this.success(info);
     }
     async destoryAction() {
-        const id = this.post('id');
-        await this.model('order').where({
+        const id = Number(this.post('id') || 0);
+        if (id <= 0) {
+            return this.fail(400, '订单ID不合法');
+        }
+        const orderInfo = await this.model('order').field('id,order_status').where({
             id: id
-        }).limit(1).delete();
-        // 删除订单商品
-        await this.model('order_goods').where({
-            order_id: id
-        }).delete();
-        // TODO 事务，验证订单是否可删除（只有失效的订单才可以删除）
+        }).find();
+        if (think.isEmpty(orderInfo)) {
+            return this.fail(404, '订单不存在');
+        }
+        if (!this.isOrderStatusDeletable(orderInfo.order_status)) {
+            return this.fail(400, '仅失效订单可删除');
+        }
+        await this.deleteOrderWithTransaction(id);
         return this.success();
     }
     async getGoodsSpecificationAction() {

@@ -1,6 +1,56 @@
 const Base = require('./base.js');
 const moment = require('moment');
 module.exports = class extends Base {
+    normalizeKeyword(rawKeyword) {
+        return String(rawKeyword || '').trim().slice(0, 50);
+    }
+
+    getKeywordPromoteThreshold() {
+        const configured = Number(process.env.SEARCH_KEYWORD_PROMOTE_THRESHOLD || 5);
+        if (!Number.isFinite(configured)) {
+            return 5;
+        }
+        return Math.max(1, Math.floor(configured));
+    }
+
+    async promoteKeywordIfNeeded(keyword) {
+        if (think.isEmpty(keyword)) {
+            return;
+        }
+        const threshold = this.getKeywordPromoteThreshold();
+        const searchCount = Number(await this.model('search_history').where({
+            keyword: keyword
+        }).count('id') || 0);
+        if (searchCount < threshold) {
+            return;
+        }
+        const keywordModel = this.model('keywords');
+        const existing = await keywordModel.where({
+            keyword: keyword
+        }).find();
+        if (think.isEmpty(existing)) {
+            await keywordModel.add({
+                keyword: keyword,
+                is_hot: 1,
+                is_default: 0,
+                is_show: 1,
+                sort_order: 100,
+                type: 0
+            });
+            return;
+        }
+        const needHot = Number(existing.is_hot || 0) !== 1;
+        const needShow = Number(existing.is_show || 0) !== 1;
+        if (needHot || needShow) {
+            await keywordModel.where({
+                id: existing.id
+            }).update({
+                is_hot: 1,
+                is_show: 1
+            });
+        }
+    }
+
     async indexAction() {
         const model = this.model('goods');
         const goodsList = await model.select();
@@ -91,7 +141,7 @@ module.exports = class extends Base {
      */
     async listAction() {
 		const userId = this.getLoginUserId();;
-        const keyword = this.get('keyword');
+        const keyword = this.normalizeKeyword(this.get('keyword'));
         const sort = this.get('sort');
         const order = this.get('order');
         const sales = this.get('sales');
@@ -108,7 +158,7 @@ module.exports = class extends Base {
                 user_id: userId,
                 add_time: parseInt(new Date().getTime() / 1000)
             });
-            //    TODO 之后要做个判断，这个词在搜索记录中的次数，如果大于某个值，则将他存入keyword
+            await this.promoteKeywordIfNeeded(keyword);
         }
         // 排序
         let orderMap = {};

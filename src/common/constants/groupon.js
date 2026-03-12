@@ -1,0 +1,33 @@
+const GROUPON_ORDER_TYPE = 2;
+
+const GROUPON_TEAM_STATUS = Object.freeze({
+  OPEN: 0,
+  SUCCESS: 1,
+  FAILED: 2
+});
+
+const GROUPON_MEMBER_JOIN_STATUS = Object.freeze({
+  WAIT_PAY: 0,
+  PAID: 1,
+  INVALID: 2
+});
+
+const GROUPON_REFUND_TASK_STATUS = Object.freeze({
+  PENDING: 0,
+  PROCESSING: 1,
+  COMPLETED: 2,
+  FAILED: 3
+});
+
+const GROUPON_ORDER_STATUS = Object.freeze({
+  WAIT_PAY: 801,
+  GROUPING: 802
+});
+
+module.exports = {
+  GROUPON_ORDER_TYPE,
+  GROUPON_TEAM_STATUS,
+  GROUPON_MEMBER_JOIN_STATUS,
+  GROUPON_REFUND_TASK_STATUS,
+  GROUPON_ORDER_STATUS
+};

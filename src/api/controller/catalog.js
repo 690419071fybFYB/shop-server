@@ -42,9 +42,11 @@ module.exports = class extends Base {
         if (Number(categoryId) !== 0) {
             where.category_id = categoryId;
         }
-        let list = await this.model('goods').where(where).order({
-            sort_order: 'asc'
-        }).field('name,id,goods_brief,min_retail_price,list_pic_url,goods_number').page(page, size).countSelect();
+        let list = await this.model('goods').where(where)
+            .order('sell_volume DESC, sort_order ASC, id DESC')
+            .field('name,id,goods_brief,min_retail_price,list_pic_url,goods_number,sell_volume')
+            .page(page, size)
+            .countSelect();
         if (Array.isArray(list.data) && list.data.length > 0) {
             try {
                 const promotionService = this.service('promotion', 'api');

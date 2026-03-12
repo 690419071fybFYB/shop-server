@@ -47,21 +47,29 @@ module.exports = class extends Base {
         if (parseInt(orderInfo.pay_status, 10) === 2) {
             return this.fail(400, '订单已支付，请不要重复操作');
         }
-        if (!(orderInfo.order_type == 0 || orderInfo.order_type == 1)) {
-            return this.fail(400, '仅支持普通订单和秒杀订单');
+        if (!(orderInfo.order_type == 0 || orderInfo.order_type == 1 || orderInfo.order_type == 2)) {
+            return this.fail(400, '仅支持普通订单、秒杀订单和拼团订单');
         }
-        const orderModel = this.model('order');
         const result = this.buildMockPayNotifyResult(orderInfo);
-        await orderModel.updatePayData(orderInfo.id, result);
-        const couponService = this.service('coupon', 'api');
-        const promotionService = this.service('promotion', 'api');
-        await couponService.consumeCouponsForOrder(orderInfo.id);
-        try {
-            await promotionService.consumeSeckillLocks(orderInfo.id);
-        } catch (err) {
-            think.logger && think.logger.warn && think.logger.warn(`[pay.preWeixinPaya.consumeSeckillLocks] ${err.message || err}`);
+        if (Number(orderInfo.order_type) === 2) {
+            const grouponService = this.service('groupon', 'api');
+            await grouponService.handleOrderPaid(orderInfo.id, {
+                requestId: String(this.ctx.state.requestId || ''),
+                payResult: result
+            });
+        } else {
+            const orderModel = this.model('order');
+            await orderModel.updatePayData(orderInfo.id, result);
+            const couponService = this.service('coupon', 'api');
+            const promotionService = this.service('promotion', 'api');
+            await couponService.consumeCouponsForOrder(orderInfo.id);
+            try {
+                await promotionService.consumeSeckillLocks(orderInfo.id);
+            } catch (err) {
+                think.logger && think.logger.warn && think.logger.warn(`[pay.preWeixinPaya.consumeSeckillLocks] ${err.message || err}`);
+            }
+            await this.afterPay(orderInfo);
         }
-        await this.afterPay(orderInfo);
         return this.success({
             orderId: orderInfo.id,
             transactionId: result.transaction_id,
@@ -109,6 +117,9 @@ module.exports = class extends Base {
         }
         if (parseInt(orderInfo.pay_status) !== 0) {
             return this.fail(400, '订单已支付，请不要重复操作');
+        }
+        if (!(orderInfo.order_type == 0 || orderInfo.order_type == 1 || orderInfo.order_type == 2)) {
+            return this.fail(400, '当前订单类型暂不支持在线支付');
         }
         const nowTs = parseInt(Date.now() / 1000, 10);
         const payExpireAt = Number(orderInfo.pay_expire_at || 0);
@@ -162,6 +173,14 @@ module.exports = class extends Base {
                     think.logger && think.logger.warn && think.logger.warn(`[pay.notify.consumeSeckillLocks] ${err.message || err}`);
                 }
                 this.afterPay(orderInfo);
+            } else if (Number(orderInfo.order_type) === 2) {
+                const grouponService = this.service('groupon', 'api');
+                await grouponService.handleOrderPaid(orderInfo.id, {
+                    requestId: String(this.ctx.state.requestId || ''),
+                    payResult: result
+                });
+            } else {
+                return '<xml><return_code><![CDATA[FAIL]]></return_code><return_msg><![CDATA[订单类型不支持]]></return_msg></xml>';
             } 
         } else {
             return '<xml><return_code><![CDATA[FAIL]]></return_code><return_msg><![CDATA[订单已支付]]></return_msg></xml>';

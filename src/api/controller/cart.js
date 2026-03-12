@@ -517,92 +517,42 @@ module.exports = class extends Base {
             checkedAddress.city_name = await this.model('region').getRegionName(checkedAddress.city_id);
             checkedAddress.district_name = await this.model('region').getRegionName(checkedAddress.district_id);
             checkedAddress.full_region = checkedAddress.province_name + checkedAddress.city_name + checkedAddress.district_name;
+            const freightService = this.service('freight', 'api');
             for (const item of freightData) {
                 if (item.number == 0) {
                     continue;
                 }
+                const templateInfo = await this.model('freight_template').where({
+                    id: item.id,
+                    is_delete: 0,
+                }).find();
+                const freightType = Number(templateInfo.freight_type || 0);
                 let ex = await this.model('freight_template_detail').where({
                     template_id: item.id,
                     area: province_id,
                     is_delete: 0,
                 }).find();
                 let freight_price = 0;
+                let groupData = {};
                 if (!think.isEmpty(ex)) {
                     // console.log('第一层：非默认邮费算法');
-                    let groupData = await this.model('freight_template_group').where({
+                    groupData = await this.model('freight_template_group').where({
                         id: ex.group_id,
                         is_delete:0
                     }).find();
-                    // 不为空，说明有模板，那么应用模板，先去判断是否符合指定的包邮条件，不满足，那么根据type 是按件还是按重量
-                    let free_by_number = groupData.free_by_number;
-                    let free_by_money = groupData.free_by_money;
-                    // 4种情况，1、free_by_number > 0  2,free_by_money > 0  3,free_by_number free_by_money > 0,4都等于0
-                    let templateInfo = await this.model('freight_template').where({
-                        id: item.id,
-                        is_delete: 0,
-                    }).find();
-                    let freight_type = templateInfo.freight_type;
-                    if (freight_type == 0) {
-                        if (item.number > groupData.start) { // 说明大于首件了
-                            freight_price = groupData.start * groupData.start_fee + (item.number - 1) * groupData.add_fee; // todo 如果续件是2怎么办？？？
-                        } else {
-                            freight_price = groupData.start * groupData.start_fee;
-                        }
-                    } else if (freight_type == 1) {
-                        if (item.goods_weight > groupData.start) { // 说明大于首件了
-                            freight_price = groupData.start * groupData.start_fee + (item.goods_weight - 1) * groupData.add_fee; // todo 如果续件是2怎么办？？？
-                        } else {
-                            freight_price = groupData.start * groupData.start_fee;
-                        }
-                    }
-                    if (free_by_number > 0) {
-                        if (item.number >= free_by_number) {
-                            freight_price = 0;
-                        }
-                    }
-                    if (free_by_money > 0) {
-                        if (item.money >= free_by_money) {
-                            freight_price = 0;
-                        }
-                    }
                 } else {
                     // console.log('第二层：使用默认的邮费算法');
-                    let groupData = await this.model('freight_template_group').where({
+                    groupData = await this.model('freight_template_group').where({
                         template_id: item.id,
                         area: 0,
                         is_delete:0,
                     }).find();
-                    let free_by_number = groupData.free_by_number;
-                    let free_by_money = groupData.free_by_money;
-                    let templateInfo = await this.model('freight_template').where({
-                        id: item.id,
-                        is_delete: 0,
-                    }).find();
-                    let freight_type = templateInfo.freight_type;
-                    if (freight_type == 0) {
-                        if (item.number > groupData.start) { // 说明大于首件了
-                            freight_price = groupData.start * groupData.start_fee + (item.number - 1) * groupData.add_fee; // todo 如果续件是2怎么办？？？
-                        } else {
-                            freight_price = groupData.start * groupData.start_fee;
-                        }
-                    } else if (freight_type == 1) {
-                        if (item.goods_weight > groupData.start) { // 说明大于首件了
-                            freight_price = groupData.start * groupData.start_fee + (item.goods_weight - 1) * groupData.add_fee; // todo 如果续件是2怎么办？？？
-                        } else {
-                            freight_price = groupData.start * groupData.start_fee;
-                        }
-                    }
-                    if (free_by_number > 0) {
-                        if (item.number >= free_by_number) {
-                            freight_price = 0;
-                        }
-                    }
-                    if (free_by_money > 0) {
-                        if (item.money >= free_by_money) {
-                            freight_price = 0;
-                        }
-                    }
                 }
+                freight_price = freightService.calculateTemplateFreight({
+                    summary: item,
+                    group: groupData,
+                    freightType: freightType
+                });
 				freightPrice = freightPrice > freight_price?freightPrice:freight_price
                 // freightPrice = freightPrice + freight_price;
                 // 会得到 几个数组，然后用省id去遍历在哪个数组
