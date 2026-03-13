@@ -145,6 +145,17 @@ module.exports = class extends Base {
         } catch (err) {
             think.logger && think.logger.error && think.logger.error(`[crontab.grouponExpireScan] ${err.message || err}`);
         }
+        const vipService = this.service('vip', 'api');
+        try {
+            await vipService.scanMonthlyCouponGrant(currentTime);
+        } catch (err) {
+            think.logger && think.logger.error && think.logger.error(`[crontab.vipMonthlyCouponGrant] ${err.message || err}`);
+        }
+        try {
+            await vipService.scanAutoRenewTasks(currentTime);
+        } catch (err) {
+            think.logger && think.logger.error && think.logger.error(`[crontab.vipAutoRenewScan] ${err.message || err}`);
+        }
         return this.success();
     }
     async resetSqlAction() {

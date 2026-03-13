@@ -47,6 +47,7 @@ module.exports = class extends think.Controller {
 			'cart/goodscount',
 			'settings/showsettings',
 			'pay/notify',
+			'vip/autorenewnotify',
 			'groupon/activitylist',
 			'groupon/activitydetail',
 			'groupon/teamdetail'

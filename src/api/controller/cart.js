@@ -444,7 +444,25 @@ module.exports = class extends Base {
             return v.checked === 1;
         });
         const promotionService = this.service('promotion', 'api');
-        const checkedPriceSummary = promotionService.summarizeCartItems(checkedGoodsList);
+        const beforeVipSummary = promotionService.summarizeCartItems(checkedGoodsList);
+        const vipService = this.service('vip', 'api');
+        let vipPricingResult = {
+            cartItems: checkedGoodsList,
+            vipDiscountPrice: 0,
+            vipAppliedItems: []
+        };
+        if (Number(type || 0) !== 2) {
+            try {
+                vipPricingResult = await vipService.applyVipPriceToCartItems({
+                    userId: userId,
+                    cartItems: checkedGoodsList
+                });
+            } catch (err) {
+                think.logger && think.logger.warn && think.logger.warn(`[cart.checkout.vipPricing] ${err.message || err}`);
+            }
+        }
+        const pricedCheckedGoodsList = Array.isArray(vipPricingResult.cartItems) ? vipPricingResult.cartItems : checkedGoodsList;
+        const afterVipSummary = promotionService.summarizeCartItems(pricedCheckedGoodsList);
         for (const item of checkedGoodsList) {
             goodsCount = goodsCount + Number(item.number || 0);
             if (item.goods_number <= 0 || item.is_on_sale == 0) {
@@ -485,7 +503,7 @@ module.exports = class extends Base {
             let province_id = checkedAddress.province_id;
             // 得到数组了，然后去判断这两个商品符不符合要求
             // 先用这个goods数组去遍历
-            let cartGoods = checkedGoodsList;
+            let cartGoods = pricedCheckedGoodsList;
             let freightTempArray = await this.model('freight_template').where({
                 is_delete: 0
             }).select();
@@ -560,12 +578,13 @@ module.exports = class extends Base {
         } else {
             checkedAddress = 0;
         }
-        const goodsOriginalPrice = checkedPriceSummary.goodsOriginalPrice;
-        const promotionPrice = checkedPriceSummary.promotionPrice;
-        const goodsTotalPrice = checkedPriceSummary.goodsTotalPrice;
-        const orderTotalPrice = Number(checkedPriceSummary.goodsTotalNumber || 0) + Number(freightPrice || 0);
+        const goodsOriginalPrice = beforeVipSummary.goodsOriginalPrice;
+        const promotionPrice = beforeVipSummary.promotionPrice;
+        const vipDiscountPrice = Number(vipPricingResult.vipDiscountPrice || 0);
+        const goodsTotalPrice = beforeVipSummary.goodsTotalPrice;
+        const orderTotalPrice = Number(afterVipSummary.goodsTotalNumber || 0) + Number(freightPrice || 0);
         const couponService = this.service('coupon', 'api');
-        const couponCartItems = checkedGoodsList.map(item => Object.assign({}, item, {
+        const couponCartItems = pricedCheckedGoodsList.map(item => Object.assign({}, item, {
             retail_price: item.display_price || item.promotion_price || item.retail_price
         }));
         const couponPreview = await couponService.previewCartCoupons({
@@ -578,13 +597,15 @@ module.exports = class extends Base {
         return this.success({
             checkedAddress: checkedAddress,
             freightPrice: freightPrice,
-            checkedGoodsList: checkedGoodsList,
+            checkedGoodsList: pricedCheckedGoodsList,
             goodsOriginalPrice: goodsOriginalPrice,
             promotionPrice: promotionPrice,
             goodsTotalPrice: goodsTotalPrice,
             orderTotalPrice: orderTotalPrice.toFixed(2),
             actualPrice: couponPreview.actualPrice,
             couponPrice: couponPreview.couponPrice,
+            vipDiscountPrice: Number(vipDiscountPrice.toFixed(2)),
+            vipAppliedItems: vipPricingResult.vipAppliedItems || [],
             couponCandidates: couponPreview.couponCandidates,
             selectedCoupons: couponPreview.selectedCoupons,
             invalidSelectedIds: couponPreview.invalidSelectedIds,

@@ -31,12 +31,29 @@ module.exports = {
         promotionV1: !['0', 'false', 'off', 'no'].includes(promotionFeatureFlag),
         enableTestPayEndpoint: ['1', 'true', 'on', 'yes'].includes(testPayFeatureFlag)
     },
+    vip: {
+        enabled: !['0', 'false', 'off', 'no'].includes(String(process.env.VIP_ENABLED || 'true').toLowerCase()),
+        defaultYearPrice: Number(process.env.VIP_DEFAULT_YEAR_PRICE || 69),
+        defaultQuarterPrice: Number(process.env.VIP_DEFAULT_QUARTER_PRICE || 25),
+        monthlyCouponId: Number(process.env.VIP_MONTHLY_COUPON_ID || 0),
+        monthlyCouponCount: Number(process.env.VIP_MONTHLY_COUPON_COUNT || 6),
+        monthlyCouponValidDays: Number(process.env.VIP_MONTHLY_COUPON_VALID_DAYS || 30)
+    },
     weixin: {
         appid: process.env.WEIXIN_APPID || '', // 小程序 appid
         secret: process.env.WEIXIN_SECRET || '', // 小程序密钥
         mch_id: process.env.WEIXIN_MCH_ID || '', // 商户帐号ID
         partner_key: process.env.WEIXIN_PARTNER_KEY || '', // 微信支付密钥
         notify_url: process.env.WEIXIN_NOTIFY_URL || 'https://api.fybshop.site/api/pay/notify' // 微信支付异步通知
+    },
+    weixinPapay: {
+        service_id: process.env.WEIXIN_PAPAY_SERVICE_ID || '',
+        notify_url: process.env.WEIXIN_PAPAY_NOTIFY_URL || '',
+        mch_id: process.env.WEIXIN_PAPAY_MCH_ID || process.env.WEIXIN_MCH_ID || '',
+        api_v3_key: process.env.WEIXIN_PAPAY_API_V3_KEY || '',
+        serial_no: process.env.WEIXIN_PAPAY_SERIAL_NO || '',
+        private_key_path: process.env.WEIXIN_PAPAY_PRIVATE_KEY_PATH || '',
+        platform_cert_path: process.env.WEIXIN_PAPAY_PLATFORM_CERT_PATH || ''
     },
     express: {
         // 已废弃，之后考虑改回来，做成和阿里云的物流查询可以切换，方便大家的使用

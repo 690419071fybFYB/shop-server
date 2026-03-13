@@ -121,6 +121,22 @@ module.exports = class extends Base {
         } catch (err) {
             think.logger && think.logger.error && think.logger.error(`[goods.detail.promotionDecorate] ${err.message || err}`);
         }
+        try {
+            const vipService = this.service('vip', 'api');
+            const decorated = await vipService.decorateGoodsDetail({
+                userId: userId,
+                goodsInfo: info,
+                productList: productList
+            });
+            if (decorated && decorated.goodsInfo) {
+                info = decorated.goodsInfo;
+            }
+            if (decorated && Array.isArray(decorated.productList)) {
+                productList = decorated.productList;
+            }
+        } catch (err) {
+            think.logger && think.logger.warn && think.logger.warn(`[goods.detail.vipDecorate] ${err.message || err}`);
+        }
         return this.success({
             info: info,
             gallery: gallery,

@@ -23,7 +23,8 @@
     "test:freight-add-unit-regression": "node scripts/test-freight-add-unit-regression.js",
     "test:order-express-model-regression": "node scripts/test-order-express-model-regression.js",
     "test:specification-price-range-regression": "node scripts/test-specification-price-range-regression.js",
-    "test:pr-gate": "npm run compile && npm run lint && npm run test:coupon && npm run test:security-regression && npm run test:auth-context-isolation && npm run test:order-sn-regression && npm run test:order-maintenance-regression && npm run test:specification-multi-dim-regression && npm run test:specification-price-range-regression && npm run test:search-keyword-promotion-regression && npm run test:order-autocomplete-cron-regression && npm run test:search-controller-regression && npm run test:order-status-semantics-regression && npm run test:freight-add-unit-regression && npm run test:order-express-model-regression",
+    "test:vip-regression": "node scripts/test-vip-regression.js",
+    "test:pr-gate": "npm run compile && npm run lint && npm run test:coupon && npm run test:security-regression && npm run test:auth-context-isolation && npm run test:order-sn-regression && npm run test:order-maintenance-regression && npm run test:specification-multi-dim-regression && npm run test:specification-price-range-regression && npm run test:search-keyword-promotion-regression && npm run test:order-autocomplete-cron-regression && npm run test:search-controller-regression && npm run test:order-status-semantics-regression && npm run test:freight-add-unit-regression && npm run test:order-express-model-regression && npm run test:vip-regression",
     "test:promotion-v1": "node scripts/test-promotion-v1.js",
     "test:cos-smoke": "node scripts/test-cos-smoke.js"
   },

@@ -256,7 +256,7 @@ module.exports = class extends think.Model {
         const orderType = Number(orderInfo.order_type || 0);
         let data = {
             pay_status: 2,
-            order_status: orderType === 2 ? 802 : 300,
+            order_status: orderType === 2 ? 802 : (orderType === 8 ? 201 : 300),
             pay_id: info.transaction_id,
             pay_time: info.time_end
         }

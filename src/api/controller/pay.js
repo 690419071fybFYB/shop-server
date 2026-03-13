@@ -47,13 +47,19 @@ module.exports = class extends Base {
         if (parseInt(orderInfo.pay_status, 10) === 2) {
             return this.fail(400, '订单已支付，请不要重复操作');
         }
-        if (!(orderInfo.order_type == 0 || orderInfo.order_type == 1 || orderInfo.order_type == 2)) {
-            return this.fail(400, '仅支持普通订单、秒杀订单和拼团订单');
+        if (!(orderInfo.order_type == 0 || orderInfo.order_type == 1 || orderInfo.order_type == 2 || orderInfo.order_type == 8)) {
+            return this.fail(400, '当前订单类型暂不支持测试支付');
         }
         const result = this.buildMockPayNotifyResult(orderInfo);
         if (Number(orderInfo.order_type) === 2) {
             const grouponService = this.service('groupon', 'api');
             await grouponService.handleOrderPaid(orderInfo.id, {
+                requestId: String(this.ctx.state.requestId || ''),
+                payResult: result
+            });
+        } else if (Number(orderInfo.order_type) === 8) {
+            const vipService = this.service('vip', 'api');
+            await vipService.handleOrderPaid(orderInfo.id, {
                 requestId: String(this.ctx.state.requestId || ''),
                 payResult: result
             });
@@ -118,7 +124,7 @@ module.exports = class extends Base {
         if (parseInt(orderInfo.pay_status) !== 0) {
             return this.fail(400, '订单已支付，请不要重复操作');
         }
-        if (!(orderInfo.order_type == 0 || orderInfo.order_type == 1 || orderInfo.order_type == 2)) {
+        if (!(orderInfo.order_type == 0 || orderInfo.order_type == 1 || orderInfo.order_type == 2 || orderInfo.order_type == 8)) {
             return this.fail(400, '当前订单类型暂不支持在线支付');
         }
         const nowTs = parseInt(Date.now() / 1000, 10);
@@ -176,6 +182,12 @@ module.exports = class extends Base {
             } else if (Number(orderInfo.order_type) === 2) {
                 const grouponService = this.service('groupon', 'api');
                 await grouponService.handleOrderPaid(orderInfo.id, {
+                    requestId: String(this.ctx.state.requestId || ''),
+                    payResult: result
+                });
+            } else if (Number(orderInfo.order_type) === 8) {
+                const vipService = this.service('vip', 'api');
+                await vipService.handleOrderPaid(orderInfo.id, {
                     requestId: String(this.ctx.state.requestId || ''),
                     payResult: result
                 });

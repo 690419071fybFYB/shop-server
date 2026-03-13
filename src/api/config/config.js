@@ -21,7 +21,11 @@ module.exports = {
     'cart/delete',
     'cart/goodscount',
     'settings/showsettings',
-    'pay/notify'
+    'pay/notify',
+    'vip/autorenewnotify',
+    'groupon/activitylist',
+    'groupon/activitydetail',
+    'groupon/teamdetail'
   ],
 
   // 需要资料完整（昵称+手机号）的控制器

@@ -491,6 +491,8 @@ module.exports = class extends think.Service {
   async receiveCoupon(userId, couponId, options = {}) {
     const uid = Number(userId);
     const cid = Number(couponId);
+    const grantBatchKey = String(options.grantBatchKey || '').trim();
+    const expireTimeOverride = Number(options.expireTimeOverride || 0);
     if (uid <= 0 || cid <= 0) {
       throw new Error('参数错误');
     }
@@ -530,17 +532,35 @@ module.exports = class extends think.Service {
         }
       }
 
-      const existedCount = Number(await userCouponModel.where({
+      const totalOwnedCount = Number(await userCouponModel.where({
         user_id: uid,
         coupon_id: cid,
         is_delete: 0
       }).count('id') || 0);
-      if (!options.allowMultiple && existedCount > 0) {
+      const existedWhere = {
+        user_id: uid,
+        coupon_id: cid,
+        is_delete: 0
+      };
+      if (grantBatchKey) {
+        existedWhere.grant_batch_key = grantBatchKey;
+      }
+      const existedRow = await userCouponModel.where(existedWhere).order('id DESC').find();
+      const existedCount = think.isEmpty(existedRow) ? 0 : 1;
+      if (grantBatchKey && existedCount > 0 && options.idempotent !== false) {
+        receiveResult = {
+          userCouponId: Number(existedRow.id),
+          couponId: cid,
+          idempotent: true
+        };
+        return;
+      }
+      if (!options.allowMultiple && totalOwnedCount > 0) {
         throw new Error('该优惠券已领取');
       }
       if (!options.ignorePerUserLimit) {
         const perUserLimit = Number(coupon.per_user_limit || 1);
-        if (perUserLimit > 0 && existedCount >= perUserLimit) {
+        if (perUserLimit > 0 && totalOwnedCount >= perUserLimit) {
           throw new Error('已达到领取上限');
         }
       }
@@ -564,11 +584,12 @@ module.exports = class extends think.Service {
       const userCouponId = await userCouponModel.add({
         coupon_id: cid,
         user_id: uid,
+        grant_batch_key: grantBatchKey,
         status: USER_COUPON_STATUS.UNUSED,
         claim_time: nowTs,
         lock_time: 0,
         used_time: 0,
-        expire_time: Number(coupon.use_end_at || 0),
+        expire_time: expireTimeOverride > 0 ? expireTimeOverride : Number(coupon.use_end_at || 0),
         lock_order_id: 0,
         used_order_id: 0,
         discount_amount: '0.00',

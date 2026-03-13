@@ -219,7 +219,20 @@ INSERT INTO `hiolabs_admin_permission` VALUES
 (47,'admin:coupon.claimrecord','优惠券领取记录接口','api',40,'/admin/coupon/claimRecord','GET',1,0),
 (48,'admin:coupon.userecord','优惠券使用记录接口','api',40,'/admin/coupon/useRecord','GET',1,0),
 (49,'admin:coupon.claimrecordexport','优惠券领取记录导出接口','api',40,'/admin/coupon/claimRecordExport','GET',1,0),
-(50,'admin:coupon.userecordexport','优惠券使用记录导出接口','api',40,'/admin/coupon/useRecordExport','GET',1,0);
+(50,'admin:coupon.userecordexport','优惠券使用记录导出接口','api',40,'/admin/coupon/useRecordExport','GET',1,0),
+(51,'menu.settings.vip','VIP会员','menu',6,'/dashboard/vip/plan','',1,0),
+(52,'menu.api.vip','VIP接口','menu',15,'','',1,0),
+(53,'admin:vip.planlist','VIP方案列表接口','api',52,'/admin/vip/planList','GET',1,0),
+(54,'admin:vip.plancreate','VIP方案创建接口','api',52,'/admin/vip/planCreate','POST',1,0),
+(55,'admin:vip.planupdate','VIP方案更新接口','api',52,'/admin/vip/planUpdate','POST',1,0),
+(56,'admin:vip.plantoggle','VIP方案状态接口','api',52,'/admin/vip/planToggle','POST',1,0),
+(57,'admin:vip.skupricelist','VIP SKU价格列表接口','api',52,'/admin/vip/skuPriceList','GET',1,0),
+(58,'admin:vip.skupricesave','VIP SKU价格保存接口','api',52,'/admin/vip/skuPriceSave','POST',1,0),
+(59,'admin:vip.memberlist','VIP会员列表接口','api',52,'/admin/vip/memberList','GET',1,0),
+(60,'admin:vip.orderlist','VIP订单列表接口','api',52,'/admin/vip/orderList','GET',1,0),
+(61,'admin:vip.refundlist','VIP退款列表接口','api',52,'/admin/vip/refundList','GET',1,0),
+(62,'admin:vip.refundapprove','VIP退款审核通过接口','api',52,'/admin/vip/refundApprove','POST',1,0),
+(63,'admin:vip.refundreject','VIP退款驳回接口','api',52,'/admin/vip/refundReject','POST',1,0);
 /*!40000 ALTER TABLE `hiolabs_admin_permission` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -250,7 +263,9 @@ INSERT INTO `hiolabs_admin_role_permission` VALUES
 (12,3,1),(13,3,2),
 (14,4,1),(15,4,2),(16,4,5),
 (21,2,21),(22,2,22),(23,2,23),(24,2,24),(25,2,25),
-(26,2,26),(27,2,27),(28,2,28),(29,2,29),(30,2,30),(31,2,31);
+(26,2,26),(27,2,27),(28,2,28),(29,2,29),(30,2,30),(31,2,31),
+(32,2,51),(33,2,52),(34,2,53),(35,2,54),(36,2,55),(37,2,56),
+(38,2,57),(39,2,58),(40,2,59),(41,2,60),(42,2,61),(43,2,62),(44,2,63);
 /*!40000 ALTER TABLE `hiolabs_admin_role_permission` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -791,6 +806,7 @@ CREATE TABLE `hiolabs_user_coupon` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `coupon_id` int unsigned NOT NULL DEFAULT '0',
   `user_id` int unsigned NOT NULL DEFAULT '0',
+  `grant_batch_key` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
   `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'unused',
   `claim_time` int NOT NULL DEFAULT '0',
   `lock_time` int NOT NULL DEFAULT '0',
@@ -801,7 +817,7 @@ CREATE TABLE `hiolabs_user_coupon` (
   `discount_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
   `is_delete` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`) USING BTREE,
-  UNIQUE KEY `uniq_user_coupon_once` (`user_id`,`coupon_id`) USING BTREE,
+  UNIQUE KEY `uniq_user_coupon_once` (`user_id`,`coupon_id`,`grant_batch_key`) USING BTREE,
   KEY `idx_user_status_expire` (`user_id`,`status`,`expire_time`) USING BTREE,
   KEY `idx_order_lock` (`lock_order_id`,`status`) USING BTREE,
   KEY `idx_order_used` (`used_order_id`,`status`) USING BTREE
@@ -1000,6 +1016,7 @@ ALTER TABLE `hiolabs_order`
   ADD COLUMN `pay_expire_at` int unsigned NOT NULL DEFAULT '0' COMMENT '支付截止时间',
   ADD COLUMN `coupon_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '优惠券优惠金额',
   ADD COLUMN `promotions_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '营销优惠金额',
+  ADD COLUMN `vip_discount_price` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT '会员优惠金额',
   ADD COLUMN `coupon_detail_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci COMMENT '优惠券快照明细',
   ADD COLUMN `groupon_activity_id` mediumint unsigned NOT NULL DEFAULT '0' COMMENT '拼团活动ID',
   ADD COLUMN `groupon_team_id` int unsigned NOT NULL DEFAULT '0' COMMENT '拼团团队ID';
@@ -1135,6 +1152,193 @@ CREATE TABLE `hiolabs_groupon_refund_task` (
   KEY `idx_status` (`status`,`update_time`) USING BTREE,
   KEY `idx_team_id` (`team_id`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='拼团退款工单';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hiolabs_vip_plan`
+--
+
+DROP TABLE IF EXISTS `hiolabs_vip_plan`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_vip_plan` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `plan_name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `plan_code` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `duration_days` int unsigned NOT NULL DEFAULT '30',
+  `price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `original_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `sort_order` int unsigned NOT NULL DEFAULT '100',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `monthly_coupon_id` int unsigned NOT NULL DEFAULT '0',
+  `monthly_coupon_count` int unsigned NOT NULL DEFAULT '6',
+  `monthly_coupon_valid_days` int unsigned NOT NULL DEFAULT '30',
+  `remark` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_enabled_sort` (`enabled`,`sort_order`,`id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='VIP套餐配置';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+LOCK TABLES `hiolabs_vip_plan` WRITE;
+/*!40000 ALTER TABLE `hiolabs_vip_plan` DISABLE KEYS */;
+INSERT INTO `hiolabs_vip_plan`
+  (`id`,`plan_name`,`plan_code`,`duration_days`,`price`,`original_price`,`sort_order`,`enabled`,`monthly_coupon_id`,`monthly_coupon_count`,`monthly_coupon_valid_days`,`remark`,`is_delete`,`add_time`,`update_time`)
+VALUES
+  (1,'黄金会员年卡','gold_year',365,69.00,69.00,10,1,0,6,30,'默认年卡方案',0,0,0),
+  (2,'黄金会员季卡','gold_quarter',90,25.00,25.00,20,1,0,6,30,'默认季卡方案',0,0,0);
+/*!40000 ALTER TABLE `hiolabs_vip_plan` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `hiolabs_vip_user`
+--
+
+DROP TABLE IF EXISTS `hiolabs_vip_user`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_vip_user` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int unsigned NOT NULL DEFAULT '0',
+  `plan_id` int unsigned NOT NULL DEFAULT '0',
+  `plan_name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'active',
+  `start_time` int unsigned NOT NULL DEFAULT '0',
+  `expire_time` int unsigned NOT NULL DEFAULT '0',
+  `last_order_id` int unsigned NOT NULL DEFAULT '0',
+  `autorenew_status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'off',
+  `contract_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `next_renew_at` int unsigned NOT NULL DEFAULT '0',
+  `grace_expire_at` int unsigned NOT NULL DEFAULT '0',
+  `retry_count` tinyint unsigned NOT NULL DEFAULT '0',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_user` (`user_id`) USING BTREE,
+  KEY `idx_status_expire` (`status`,`expire_time`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='VIP会员状态表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hiolabs_vip_order`
+--
+
+DROP TABLE IF EXISTS `hiolabs_vip_order`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_vip_order` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `order_id` int unsigned NOT NULL DEFAULT '0',
+  `order_sn` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `user_id` int unsigned NOT NULL DEFAULT '0',
+  `plan_id` int unsigned NOT NULL DEFAULT '0',
+  `plan_name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `duration_days` int unsigned NOT NULL DEFAULT '0',
+  `order_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `pay_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `pay_status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'unpaid',
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'pending_pay',
+  `pay_time` int unsigned NOT NULL DEFAULT '0',
+  `start_time` int unsigned NOT NULL DEFAULT '0',
+  `expire_time` int unsigned NOT NULL DEFAULT '0',
+  `refund_status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'none',
+  `refund_amount` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `refund_reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `refund_sn` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `refund_apply_at` int unsigned NOT NULL DEFAULT '0',
+  `refund_audit_at` int unsigned NOT NULL DEFAULT '0',
+  `refund_completed_at` int unsigned NOT NULL DEFAULT '0',
+  `refund_audit_admin_id` int unsigned NOT NULL DEFAULT '0',
+  `refund_remark` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `source` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'manual',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_order_id` (`order_id`) USING BTREE,
+  KEY `idx_user_status` (`user_id`,`status`,`pay_status`) USING BTREE,
+  KEY `idx_refund_status` (`refund_status`,`update_time`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='VIP业务订单表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hiolabs_vip_sku_price`
+--
+
+DROP TABLE IF EXISTS `hiolabs_vip_sku_price`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_vip_sku_price` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `plan_id` int unsigned NOT NULL DEFAULT '0',
+  `goods_id` int unsigned NOT NULL DEFAULT '0',
+  `goods_name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `sku_id` int unsigned NOT NULL DEFAULT '0',
+  `sku_name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `origin_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `vip_price` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `remark` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_plan_sku` (`plan_id`,`sku_id`) USING BTREE,
+  KEY `idx_goods_id` (`goods_id`,`enabled`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='VIP商品SKU会员价表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hiolabs_vip_coupon_grant_log`
+--
+
+DROP TABLE IF EXISTS `hiolabs_vip_coupon_grant_log`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_vip_coupon_grant_log` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int unsigned NOT NULL DEFAULT '0',
+  `plan_id` int unsigned NOT NULL DEFAULT '0',
+  `coupon_id` int unsigned NOT NULL DEFAULT '0',
+  `grant_batch_key` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `grant_count` int unsigned NOT NULL DEFAULT '0',
+  `valid_days` int unsigned NOT NULL DEFAULT '30',
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'processing',
+  `remark` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `is_delete` tinyint(1) NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  `update_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE KEY `uniq_user_plan_coupon_batch` (`user_id`,`plan_id`,`coupon_id`,`grant_batch_key`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='VIP月度发券日志';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hiolabs_vip_event_log`
+--
+
+DROP TABLE IF EXISTS `hiolabs_vip_event_log`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hiolabs_vip_event_log` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int unsigned NOT NULL DEFAULT '0',
+  `event_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `event_action` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `order_id` int unsigned NOT NULL DEFAULT '0',
+  `vip_order_id` int unsigned NOT NULL DEFAULT '0',
+  `request_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
+  `payload_json` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci,
+  `operator_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'system',
+  `operator_id` int unsigned NOT NULL DEFAULT '0',
+  `add_time` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_user_event_time` (`user_id`,`event_type`,`add_time`) USING BTREE,
+  KEY `idx_order_id` (`order_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='VIP审计事件日志';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

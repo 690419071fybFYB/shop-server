@@ -498,9 +498,26 @@ module.exports = class extends Base {
         } catch (err) {
             think.logger && think.logger.error && think.logger.error(`[order.submit.promotionDecorate] ${err.message || err}`);
         }
-        const pricedSummary = promotionService.summarizeCartItems(pricedGoodsList);
-        const goodsTotalPrice = Number(pricedSummary.goodsTotalNumber || 0);
-        const promotionPrice = Number(pricedSummary.promotionNumber || 0);
+        const beforeVipSummary = promotionService.summarizeCartItems(pricedGoodsList);
+        const vipService = this.service('vip', 'api');
+        let vipPricingResult = {
+            cartItems: pricedGoodsList,
+            vipDiscountPrice: 0,
+            vipAppliedItems: []
+        };
+        try {
+            vipPricingResult = await vipService.applyVipPriceToCartItems({
+                userId: userId,
+                cartItems: pricedGoodsList
+            });
+        } catch (err) {
+            think.logger && think.logger.warn && think.logger.warn(`[order.submit.vipPricing] ${err.message || err}`);
+        }
+        pricedGoodsList = Array.isArray(vipPricingResult.cartItems) ? vipPricingResult.cartItems : pricedGoodsList;
+        const afterVipSummary = promotionService.summarizeCartItems(pricedGoodsList);
+        const goodsTotalPrice = Number(afterVipSummary.goodsTotalNumber || 0);
+        const promotionPrice = Number(beforeVipSummary.promotionNumber || 0);
+        const vipDiscountPrice = Number(vipPricingResult.vipDiscountPrice || 0);
 
         const couponService = this.service('coupon', 'api');
         const couponCartItems = pricedGoodsList.map(item => Object.assign({}, item, {
@@ -519,7 +536,7 @@ module.exports = class extends Base {
         // 订单价格计算
         const orderTotalPrice = goodsTotalPrice + freightPrice; // 订单的总价
         const couponPrice = Number(couponPreview.couponPrice || 0);
-        const totalPromotionPrice = Math.max(0, promotionPrice + couponPrice);
+        const totalPromotionPrice = Math.max(0, promotionPrice + vipDiscountPrice + couponPrice);
         const actualPrice = Math.max(0, Number(couponPreview.actualPrice || orderTotalPrice)); // 减去其它支付的金额后，要实际支付的金额 比如满减等优惠
         const currentTime = this.getCurrentUnixTime();
         const printInfo = this.buildOrderPrintInfo(pricedGoodsList);
@@ -545,6 +562,7 @@ module.exports = class extends Base {
             change_price: actualPrice,
             coupon_price: couponPrice,
             promotions_price: Number(totalPromotionPrice.toFixed(2)),
+            vip_discount_price: Number(vipDiscountPrice.toFixed(2)),
             coupon_detail_json: JSON.stringify(couponPreview.selectedCoupons || []),
             print_info: printInfo,
             offline_pay:offlinePay
@@ -558,6 +576,17 @@ module.exports = class extends Base {
             consumeCouponDirect: offlinePay === 1
         });
         await this.model('cart').clearBuyGoods(userId);
+        try {
+            await vipService.recordVipDiscountUsage({
+                userId: userId,
+                orderId: persistedOrderInfo.id,
+                vipDiscountPrice: vipDiscountPrice,
+                vipAppliedItems: vipPricingResult.vipAppliedItems || [],
+                requestId: String(this.ctx && this.ctx.state && this.ctx.state.requestId || '')
+            });
+        } catch (err) {
+            think.logger && think.logger.warn && think.logger.warn(`[order.submit.recordVipDiscountUsage] orderId=${persistedOrderInfo.id} ${err.message || err}`);
+        }
         return this.success({
             orderInfo: persistedOrderInfo
         });
