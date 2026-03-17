@@ -60,6 +60,8 @@ function runServiceRegression() {
   console.log('3) VIP service 核心能力回归检查');
   const vipService = read('src/api/service/vip.js');
   const requiredMethods = [
+    'repairUtf8Mojibake(value)',
+    'normalizePlanName(value,',
     'isPapayConfigured()',
     'async submitVipOrder(',
     'async handleOrderPaid(',

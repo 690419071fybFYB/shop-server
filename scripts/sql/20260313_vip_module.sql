@@ -1,5 +1,6 @@
 -- VIP module migration (phase 1 + phase 2 baseline)
 -- Safe to run multiple times where possible.
+SET NAMES utf8mb4;
 
 SET @db_name = DATABASE();
 
@@ -199,8 +200,8 @@ CREATE TABLE IF NOT EXISTS `hiolabs_vip_event_log` (
 INSERT INTO `hiolabs_vip_plan`
   (`id`,`plan_name`,`plan_code`,`duration_days`,`price`,`original_price`,`sort_order`,`enabled`,`monthly_coupon_id`,`monthly_coupon_count`,`monthly_coupon_valid_days`,`remark`,`is_delete`,`add_time`,`update_time`)
 VALUES
-  (1,'黄金会员年卡','gold_year',365,69.00,69.00,10,1,0,6,30,'默认年卡方案',0,0,0),
-  (2,'黄金会员季卡','gold_quarter',90,25.00,25.00,20,1,0,6,30,'默认季卡方案',0,0,0)
+  (1,CONVERT(0xE9BB84E98791E4BC9AE59198E5B9B4E58DA1 USING utf8mb4),'gold_year',365,69.00,69.00,10,1,0,6,30,'default_year_plan',0,0,0),
+  (2,CONVERT(0xE9BB84E98791E4BC9AE59198E5ADA3E58DA1 USING utf8mb4),'gold_quarter',90,25.00,25.00,20,1,0,6,30,'default_quarter_plan',0,0,0)
 ON DUPLICATE KEY UPDATE
   `plan_name` = VALUES(`plan_name`),
   `plan_code` = VALUES(`plan_code`),
@@ -211,6 +212,18 @@ ON DUPLICATE KEY UPDATE
   `monthly_coupon_count` = VALUES(`monthly_coupon_count`),
   `monthly_coupon_valid_days` = VALUES(`monthly_coupon_valid_days`),
   `update_time` = VALUES(`update_time`);
+
+UPDATE `hiolabs_vip_plan`
+SET
+  `plan_name` = CONVERT(0xE9BB84E98791E4BC9AE59198E5B9B4E58DA1 USING utf8mb4),
+  `update_time` = UNIX_TIMESTAMP()
+WHERE `plan_code` = 'gold_year' AND `is_delete` = 0;
+
+UPDATE `hiolabs_vip_plan`
+SET
+  `plan_name` = CONVERT(0xE9BB84E98791E4BC9AE59198E5ADA3E58DA1 USING utf8mb4),
+  `update_time` = UNIX_TIMESTAMP()
+WHERE `plan_code` = 'gold_quarter' AND `is_delete` = 0;
 
 SET @perm_parent_settings = COALESCE(
   (SELECT id FROM `hiolabs_admin_permission` WHERE perm_key = 'menu.settings' LIMIT 1),

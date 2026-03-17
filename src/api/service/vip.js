@@ -59,6 +59,68 @@ module.exports = class extends think.Service {
     return String(value === undefined || value === null ? '' : value).trim();
   }
 
+  hasCjkText(value) {
+    return /[\u3400-\u9FFF]/.test(String(value || ''));
+  }
+
+  isLikelyCorruptedPlanName(value) {
+    const raw = this.toText(value);
+    if (!raw) {
+      return true;
+    }
+    if (/\?{2,}/.test(raw) || /�/.test(raw)) {
+      return true;
+    }
+    if (/[\x00-\x1F]/.test(raw)) {
+      return true;
+    }
+    if (this.hasCjkText(raw)) {
+      return false;
+    }
+    if (/[ÃÂÐÑ]/.test(raw)) {
+      return true;
+    }
+    return false;
+  }
+
+  repairUtf8Mojibake(value) {
+    const raw = this.toText(value);
+    if (!raw) {
+      return raw;
+    }
+    if (this.hasCjkText(raw)) {
+      return raw;
+    }
+    if (!/[\u00C0-\u00FF]/.test(raw)) {
+      return raw;
+    }
+    try {
+      const decoded = Buffer.from(raw, 'latin1').toString('utf8').trim();
+      if (decoded && this.hasCjkText(decoded)) {
+        return decoded;
+      }
+      return raw;
+    } catch (error) {
+      return raw;
+    }
+  }
+
+  normalizePlanName(value, {planCode = '', durationDays = 0} = {}) {
+    const repaired = this.repairUtf8Mojibake(value);
+    if (repaired && !this.isLikelyCorruptedPlanName(repaired)) {
+      return repaired;
+    }
+    const code = this.toText(planCode).toLowerCase();
+    const days = this.toInt(durationDays, 0);
+    if (code === 'gold_year' || days >= 300) {
+      return '黄金会员年卡';
+    }
+    if (code === 'gold_quarter' || (days > 0 && days < 300)) {
+      return '黄金会员季卡';
+    }
+    return repaired || '';
+  }
+
   isTruthy(value, defaultValue = false) {
     if (value === undefined || value === null || value === '') {
       return defaultValue;
@@ -223,11 +285,16 @@ module.exports = class extends think.Service {
   }
 
   normalizePlanRow(row = {}) {
+    const durationDays = this.toInt(row.duration_days, 30);
+    const planCode = this.toText(row.plan_code || '');
     return {
       id: this.toInt(row.id, 0),
-      plan_name: this.toText(row.plan_name || row.name || ''),
-      plan_code: this.toText(row.plan_code || ''),
-      duration_days: this.toInt(row.duration_days, 30),
+      plan_name: this.normalizePlanName(row.plan_name || row.name || '', {
+        planCode,
+        durationDays
+      }),
+      plan_code: planCode,
+      duration_days: durationDays,
       price: this.toPrice(row.price, 0),
       original_price: this.toPrice(row.original_price, row.price || 0),
       sort_order: this.toInt(row.sort_order, 100),
@@ -552,7 +619,8 @@ module.exports = class extends think.Service {
       id: uid
     }).field('id,nickname,mobile').find();
 
-    const rootModel = this.model('order');
+    const orderModel = this.model('order');
+    const vipOrderModel = this.model('vip_order');
     let persistedOrder = null;
     let persistedVipOrder = null;
 
@@ -563,45 +631,48 @@ module.exports = class extends think.Service {
       requestId: this.toText(requestId),
       createOrderSn: () => orderSnUtil.generateOrderSn(),
       execute: async (orderSn) => {
-        await rootModel.transaction(async () => {
-          const bindModel = (name) => {
-            const model = rootModel.model(name);
-            model.db(rootModel.db());
-            return model;
-          };
-          const orderModel = bindModel('order');
-          const vipOrderModel = bindModel('vip_order');
+        const orderPayload = this.buildVipOrderPayload({
+          orderSn,
+          userId: uid,
+          userInfo,
+          plan,
+          nowTs
+        });
+        const orderId = await orderModel.add(orderPayload);
+        if (!orderId) {
+          throw new Error('创建会员订单失败');
+        }
 
-          const orderPayload = this.buildVipOrderPayload({
-            orderSn,
-            userId: uid,
-            userInfo,
-            plan,
-            nowTs
-          });
-          const orderId = await orderModel.add(orderPayload);
-          if (!orderId) {
-            throw new Error('创建会员订单失败');
-          }
+        const vipOrderPayload = this.buildVipOrderRecord({
+          orderId,
+          orderSn,
+          userId: uid,
+          plan,
+          nowTs
+        });
 
-          const vipOrderPayload = this.buildVipOrderRecord({
-            orderId,
-            orderSn,
-            userId: uid,
-            plan,
-            nowTs
-          });
-          const vipOrderId = await vipOrderModel.add(vipOrderPayload);
+        let vipOrderId = 0;
+        try {
+          vipOrderId = await vipOrderModel.add(vipOrderPayload);
           if (!vipOrderId) {
             throw new Error('创建会员业务订单失败');
           }
+        } catch (error) {
+          try {
+            await orderModel.where({
+              id: this.toInt(orderId, 0)
+            }).delete();
+          } catch (rollbackError) {
+            think.logger && think.logger.warn && think.logger.warn(`[vip.submitVipOrder.rollback] orderId=${orderId} ${rollbackError.message || rollbackError}`);
+          }
+          throw error;
+        }
 
-          persistedOrder = Object.assign({}, orderPayload, {
-            id: this.toInt(orderId, 0)
-          });
-          persistedVipOrder = Object.assign({}, vipOrderPayload, {
-            id: this.toInt(vipOrderId, 0)
-          });
+        persistedOrder = Object.assign({}, orderPayload, {
+          id: this.toInt(orderId, 0)
+        });
+        persistedVipOrder = Object.assign({}, vipOrderPayload, {
+          id: this.toInt(vipOrderId, 0)
         });
       }
     });
@@ -883,12 +954,23 @@ module.exports = class extends think.Service {
     }
   }
 
-  async upsertVipUserByPaidOrder({vipOrder, plan, paidAt, orderId}) {
+  resolvePlanWithinTransaction(planRow = {}, planId = 0) {
+    if (!think.isEmpty(planRow)) {
+      return this.normalizePlanRow(planRow);
+    }
+    const fallback = this.defaultPlans().find((item) => this.toInt(item.id, 0) === this.toInt(planId, 0));
+    if (fallback) {
+      return this.normalizePlanRow(fallback);
+    }
+    throw new Error('会员套餐不存在');
+  }
+
+  async upsertVipUserByPaidOrder({vipOrder, plan, paidAt, orderId, vipUserModel = null}) {
     const uid = this.toInt(vipOrder.user_id, 0);
     const durationDays = Math.max(1, this.toInt(vipOrder.duration_days || plan.duration_days, 30));
     const extendSeconds = durationDays * 24 * 60 * 60;
-    const vipUserModel = this.model('vip_user');
-    const existing = await vipUserModel.where({
+    const model = vipUserModel || this.model('vip_user');
+    const existing = await model.where({
       user_id: uid,
       is_delete: 0
     }).order('id DESC').find();
@@ -898,7 +980,7 @@ module.exports = class extends think.Service {
     const newExpireTime = baseStart + extendSeconds;
 
     if (think.isEmpty(existing)) {
-      const vipUserId = await vipUserModel.add({
+      const vipUserId = await model.add({
         user_id: uid,
         plan_id: this.toInt(plan.id, 0),
         plan_name: this.toText(plan.plan_name),
@@ -922,7 +1004,7 @@ module.exports = class extends think.Service {
       };
     }
 
-    await vipUserModel.where({
+    await model.where({
       id: this.toInt(existing.id, 0)
     }).update({
       plan_id: this.toInt(plan.id, 0),
@@ -949,85 +1031,107 @@ module.exports = class extends think.Service {
     if (normalizedOrderId <= 0) {
       throw new Error('订单参数错误');
     }
-    const rootModel = this.model('order');
-    let paidResult = null;
+    const orderModel = this.model('order');
+    const vipOrderModel = this.model('vip_order');
+    const vipPlanModel = this.model('vip_plan');
+    const vipUserModel = this.model('vip_user');
 
-    await rootModel.transaction(async () => {
-      const bindModel = (name) => {
-        const model = rootModel.model(name);
-        model.db(rootModel.db());
-        return model;
+    const orderInfo = await orderModel.where({
+      id: normalizedOrderId,
+      is_delete: 0
+    }).find();
+    if (think.isEmpty(orderInfo)) {
+      throw new Error('订单不存在');
+    }
+    if (this.toInt(orderInfo.order_type, 0) !== 8) {
+      throw new Error('非会员订单');
+    }
+
+    const vipOrderInfo = await vipOrderModel.where({
+      order_id: normalizedOrderId,
+      is_delete: 0
+    }).find();
+    if (think.isEmpty(vipOrderInfo)) {
+      throw new Error('会员业务订单不存在');
+    }
+
+    if (this.toText(vipOrderInfo.pay_status) === VIP_PAY_STATUS_PAID && this.toInt(orderInfo.pay_status, 0) === 2) {
+      return {
+        orderId: normalizedOrderId,
+        idempotent: true,
+        vipUser: null
       };
-      const orderModel = bindModel('order');
-      const vipOrderModel = bindModel('vip_order');
+    }
 
-      const orderInfo = await orderModel.where({
+    const paidAt = this.parsePayTimeToUnix(payResult && payResult.time_end);
+    const payId = this.toText(payResult && payResult.transaction_id) || this.toText(orderInfo.pay_id) || `vip_tx_${Date.now()}`;
+    const orderUpdatedRows = await orderModel.where({
+      id: normalizedOrderId,
+      is_delete: 0,
+      pay_status: ['!=', 2]
+    }).update({
+      pay_status: 2,
+      order_status: 201,
+      pay_id: payId,
+      pay_time: paidAt
+    });
+
+    if (this.toInt(orderUpdatedRows, 0) <= 0) {
+      const latestOrder = await orderModel.where({
         id: normalizedOrderId,
         is_delete: 0
       }).find();
-      if (think.isEmpty(orderInfo)) {
-        throw new Error('订单不存在');
-      }
-      if (this.toInt(orderInfo.order_type, 0) !== 8) {
-        throw new Error('非会员订单');
-      }
-
-      const vipOrderInfo = await vipOrderModel.where({
+      const latestVipOrder = await vipOrderModel.where({
         order_id: normalizedOrderId,
         is_delete: 0
       }).find();
-      if (think.isEmpty(vipOrderInfo)) {
-        throw new Error('会员业务订单不存在');
-      }
-
-      if (this.toText(vipOrderInfo.pay_status) === VIP_PAY_STATUS_PAID && this.toInt(orderInfo.pay_status, 0) === 2) {
-        paidResult = {
+      if (!think.isEmpty(latestOrder)
+        && !think.isEmpty(latestVipOrder)
+        && this.toInt(latestOrder.pay_status, 0) === 2
+        && this.toText(latestVipOrder.pay_status) === VIP_PAY_STATUS_PAID) {
+        return {
           orderId: normalizedOrderId,
           idempotent: true,
           vipUser: null
         };
-        return;
       }
+      throw new Error('会员订单支付状态更新失败');
+    }
 
-      const paidAt = this.parsePayTimeToUnix(payResult && payResult.time_end);
-      await orderModel.where({
-        id: normalizedOrderId
-      }).update({
-        pay_status: 2,
-        order_status: 201,
-        pay_id: this.toText(payResult && payResult.transaction_id) || this.toText(orderInfo.pay_id) || `vip_tx_${Date.now()}`,
-        pay_time: paidAt
-      });
-
-      const plan = await this.getPlanById(this.toInt(vipOrderInfo.plan_id, 0), {allowDisabled: true});
-      const vipUser = await this.upsertVipUserByPaidOrder({
-        vipOrder: vipOrderInfo,
-        plan,
-        paidAt,
-        orderId: normalizedOrderId
-      });
-
-      await vipOrderModel.where({
-        id: this.toInt(vipOrderInfo.id, 0)
-      }).update({
-        pay_status: VIP_PAY_STATUS_PAID,
-        status: VIP_ORDER_STATUS_PAID,
-        pay_amount: this.formatPrice(this.toPrice(orderInfo.actual_price, vipOrderInfo.order_amount || 0)),
-        pay_time: paidAt,
-        start_time: vipUser.startTime,
-        expire_time: vipUser.expireTime,
-        update_time: paidAt
-      });
-
-      paidResult = {
-        orderId: normalizedOrderId,
-        idempotent: false,
-        vipUser,
-        vipOrderId: this.toInt(vipOrderInfo.id, 0),
-        userId: this.toInt(vipOrderInfo.user_id, 0),
-        planId: this.toInt(vipOrderInfo.plan_id, 0)
-      };
+    const planRow = await vipPlanModel.where({
+      id: this.toInt(vipOrderInfo.plan_id, 0),
+      is_delete: 0
+    }).find();
+    const plan = this.resolvePlanWithinTransaction(planRow, this.toInt(vipOrderInfo.plan_id, 0));
+    const vipUser = await this.upsertVipUserByPaidOrder({
+      vipOrder: vipOrderInfo,
+      plan,
+      paidAt,
+      orderId: normalizedOrderId,
+      vipUserModel
     });
+
+    await vipOrderModel.where({
+      id: this.toInt(vipOrderInfo.id, 0),
+      is_delete: 0
+    }).update({
+      pay_status: VIP_PAY_STATUS_PAID,
+      status: VIP_ORDER_STATUS_PAID,
+      pay_amount: this.formatPrice(this.toPrice(orderInfo.actual_price, vipOrderInfo.order_amount || 0)),
+      pay_time: paidAt,
+      start_time: vipUser.startTime,
+      expire_time: vipUser.expireTime,
+      update_time: paidAt
+    });
+
+    const paidResult = {
+      orderId: normalizedOrderId,
+      idempotent: false,
+      vipUser,
+      vipOrderId: this.toInt(vipOrderInfo.id, 0),
+      userId: this.toInt(vipOrderInfo.user_id, 0),
+      planId: this.toInt(vipOrderInfo.plan_id, 0)
+    };
 
     if (!paidResult) {
       throw new Error('会员支付处理失败');
